@@ -148,8 +148,10 @@ async function loadFromSheet() {
     el.innerHTML = members.map((m,i) => `
         <div class="sheet-item ${existing.has(m.name)?'checked':''}" data-idx="${i}">
             <div class="cbox"></div>
-            <div class="p-avatar ${m.gender}">${m.name[0]}</div>
-            <div class="p-info"><div class="p-name">${m.name}</div><div class="p-meta"><span class="lv lv-${m.level}"></span>${m.level} · ${m.gender}</div></div>
+            <span class="level-dot ${m.level}"></span>
+            <span style="font-weight:700;font-size:.9rem;flex:1">${m.name}</span>
+            <span class="pc-lv lv-${m.level}" style="font-size:.62rem;padding:1px 5px">${m.level}</span>
+            <span style="font-size:.72rem;color:var(--txt3);font-weight:600">${m.gender}</span>
         </div>
     `).join('');
     el.querySelectorAll('.sheet-item').forEach(e => e.addEventListener('click', () => e.classList.toggle('checked')));
