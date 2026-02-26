@@ -148,8 +148,10 @@ async function loadFromSheet() {
     el.innerHTML = members.map((m,i) => `
         <div class="sheet-item ${existing.has(m.name)?'checked':''}" data-idx="${i}">
             <div class="cbox"></div>
-            <div class="p-avatar ${m.gender}">${m.name[0]}</div>
-            <div class="p-info"><div class="p-name">${m.name}</div><div class="p-meta"><span class="lv lv-${m.level}"></span>${m.level} · ${m.gender}</div></div>
+            <span class="level-dot ${m.level}"></span>
+            <span style="font-weight:700;font-size:.9rem;flex:1">${m.name}</span>
+            <span class="pc-lv lv-${m.level}" style="font-size:.62rem;padding:1px 5px">${m.level}</span>
+            <span style="font-size:.72rem;color:var(--txt3);font-weight:600">${m.gender}</span>
         </div>
     `).join('');
     el.querySelectorAll('.sheet-item').forEach(e => e.addEventListener('click', () => e.classList.toggle('checked')));
@@ -161,7 +163,7 @@ function confirmImport() {
     $$('#sheetList .sheet-item.checked').forEach(el => {
         const m = S.sheetMembers[+el.dataset.idx];
         if (m && !existing.has(m.name)) {
-            S.players.push({ id:genId('player'), name:m.name, level:m.level, gender:m.gender, status:'waiting', gameCount:0, restCount:0, selected:false });
+            S.players.push({ id:genId('player'), name:m.name, level:m.level, gender:m.gender, status:'waiting', gameCount:0, restCount:0, selected:false, shuttle:false });
             existing.add(m.name); count++;
         }
     });
@@ -302,7 +304,7 @@ function addManual() {
     const name = $('#inpName').value.trim();
     if (!name) { toast('이름을 입력하세요', 'err'); return; }
     if (S.players.some(p => p.name === name)) { toast('이미 등록된 이름', 'err'); return; }
-    S.players.push({ id:genId('player'), name, level:$('#inpLevel').value, gender:$('#inpGender').value, status:'waiting', gameCount:0, restCount:0, selected:false });
+    S.players.push({ id:genId('player'), name, level:$('#inpLevel').value, gender:$('#inpGender').value, status:'waiting', gameCount:0, restCount:0, selected:false, shuttle:false });
     $('#inpName').value = '';
     closeModal('modalAdd'); renderAll(); toast(`${name} 추가됨`, 'ok');
 }
@@ -313,6 +315,15 @@ function removePlayer(pid) {
     S.players = S.players.filter(x => x.id !== pid);
     S.selectedIds = S.selectedIds.filter(x => x !== pid);
     renderAll();
+}
+
+function toggleShuttle(pid, evt) {
+    evt.stopPropagation();
+    const p = S.players.find(x => x.id === pid);
+    if (!p) return;
+    p.shuttle = !p.shuttle;
+    renderPlayers();
+    toast(`${p.name} 셔틀콕 ${p.shuttle ? '제출 ✅' : '미제출'}`, 'info');
 }
 
 function toggleSelect(pid) {
@@ -663,9 +674,9 @@ function renderCourts() {
             <div class="court-body">
                 ${live?`
                 <div class="court-game">
-                    <div class="court-team">${c.game.teamA.map(id=>`<div class="team-player"><span class="lv lv-${pL(id)}"></span>${pN(id)} <span style="color:var(--txt3);font-size:.72rem">${pL(id)}</span></div>`).join('')}</div>
+                    <div class="court-team">${c.game.teamA.map(id=>`<div class="team-player"><span class="level-dot ${pL(id)}"></span><strong>${pN(id)}</strong> <span class="pc-lv lv-${pL(id)}" style="font-size:.6rem;padding:1px 5px">${pL(id)}</span></div>`).join('')}</div>
                     <div class="court-vs">VS</div>
-                    <div class="court-team">${c.game.teamB.map(id=>`<div class="team-player"><span class="lv lv-${pL(id)}"></span>${pN(id)} <span style="color:var(--txt3);font-size:.72rem">${pL(id)}</span></div>`).join('')}</div>
+                    <div class="court-team">${c.game.teamB.map(id=>`<div class="team-player"><span class="level-dot ${pL(id)}"></span><strong>${pN(id)}</strong> <span class="pc-lv lv-${pL(id)}" style="font-size:.6rem;padding:1px 5px">${pL(id)}</span></div>`).join('')}</div>
                 </div>
                 `:`<div class="court-empty">대기중</div>`}
             </div>
@@ -706,9 +717,11 @@ function renderPlayers() {
             const genderCls = p.gender === '남' ? 'male' : 'female';
             const urgentTag = (p.restCount >= CONFIG.MAX_REST && p.status==='waiting') ? `<span class="pc-urgent">🔥${p.restCount}쉼</span>` : '';
             return `
-            <div class="pc lv-bg-${p.level} ${p.selected?'selected':''} ${p.status} gender-${genderCls}" onclick="toggleSelect('${p.id}')">
+            <div class="pc lv-bg-${p.level} ${p.selected?'selected':''} ${p.status} gender-${genderCls} ${p.shuttle?'shuttle-done':''}" onclick="toggleSelect('${p.id}')">
                 <div class="pc-main">
                     <span class="pc-name">${p.name}</span>
+                    ${urgentTag}
+                    <button class="pc-shuttle ${p.shuttle?'done':''}" onclick="toggleShuttle('${p.id}',event)" title="셔틀콕 제출">${p.shuttle?'🏸':'○'}</button>
                     <span class="pc-game-badge${p.gameCount > 0 ? ' has-games' : ''}">${p.gameCount}</span>
                 </div>
                 <div class="pc-tags">
