@@ -469,8 +469,19 @@ function getMinGameCount() {
 function filterByGameCount(pool) {
     const minGC = getMinGameCount();
     const filtered = pool.filter(p => p.gameCount < minGC + CONFIG.MAX_GAME_DIFF);
-    // 필터 후 4명 미만이면 원본 반환 (게임 막힘 방지)
-    return filtered.length >= 4 ? filtered : pool;
+    if (filtered.length < 4) return pool; // 기존 로직
+    
+    // ✅ 추가: 필터 후 유효한 4인 조합(성별 통과)이 하나도 없으면 필터 해제
+    const hasValidCombo = checkHasValidCombo(filtered);
+    return hasValidCombo ? filtered : pool;
+}
+
+function checkHasValidCombo(pool) {
+    if (pool.length < 4) return false;
+    const males = pool.filter(p => p.gender === '남');
+    const females = pool.filter(p => p.gender === '여');
+    // 남4, 여4, 혼복(남2여2) 중 하나라도 가능한지 체크
+    return males.length >= 4 || females.length >= 4 || (males.length >= 2 && females.length >= 2);
 }
 
 /** 대기중인 사람만 */
