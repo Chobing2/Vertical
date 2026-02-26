@@ -29,6 +29,8 @@ const CONFIG = {
     MIXED_PENALTY_BASE: 60,
     // 혼복 목표 비율 (0.15 = 약 15%, 7게임 중 1게임)
     MIXED_TARGET_RATIO: 0.15,
+    // 최대 게임수 차이 제한 (이 이상 차이나면 매칭 제외)
+    MAX_GAME_DIFF: 2,
 };
 
 const S = {
@@ -450,6 +452,27 @@ function getAvailable() {
     );
 }
 
+/**
+ * 활성 플레이어(waiting/playing/대기열) 중 최소 게임수
+ * late/resting 제외하여 공정한 기준
+ */
+function getMinGameCount() {
+    const active = S.players.filter(p => p.status === 'waiting' || p.status === 'playing');
+    if (active.length === 0) return 0;
+    return Math.min(...active.map(p => p.gameCount));
+}
+
+/**
+ * 게임수 차이 필터: MAX_GAME_DIFF 이상 차이나는 사람 제외
+ * 단, 필터 후 4명 미만이면 필터 해제 (게임 진행 우선)
+ */
+function filterByGameCount(pool) {
+    const minGC = getMinGameCount();
+    const filtered = pool.filter(p => p.gameCount < minGC + CONFIG.MAX_GAME_DIFF);
+    // 필터 후 4명 미만이면 원본 반환 (게임 막힘 방지)
+    return filtered.length >= 4 ? filtered : pool;
+}
+
 /** 대기중인 사람만 */
 function getWaitingOnly() {
     const inQueue = new Set();
@@ -572,9 +595,13 @@ function scoreCombo(four) {
         repeatPenalty = Math.max(500, 10000 - repeatDist * 1500);
     }
 
-    // (1) playing 포함: 약한 패널티
+    // (1) playing 포함: 코트수에 따라 동적 패널티
+    //     3코트 이하: 대기자 충분 → playing 패널티 높게 (대기자 우선)
+    //     4코트+: 대기자 부족 → playing 패널티 낮게 (빈 코트 방지)
+    const courtCount = S.courts.length;
     const playingCount = four.filter(p => p.status === 'playing').length;
-    const playingPenalty = playingCount * 15;
+    const playingPenaltyPerPlayer = courtCount >= 4 ? 5 : 15;
+    const playingPenalty = playingCount * playingPenaltyPerPlayer;
 
     // (2) 급수 유사도: 개인 급수 차이 기반 (비슷한 급수끼리 우선)
     const levels = four.map(p => CONFIG.LV[p.level] || 3);
@@ -597,10 +624,18 @@ function scoreCombo(four) {
     // (5) 신선도 (같이 한 적 적은 조합 우선)
     const freshness = comboFreshness(four);
 
-    // (6) 랜덤 노이즈: 동일 점수 조합 간 무작위 선택 (0~8)
+    // (6) 게임수 균등: 게임 많이 한 사람 포함하면 패널티
+    const minGC = getMinGameCount();
+    const gameCountPenalty = four.reduce((sum, p) => {
+        const diff = p.gameCount - minGC;
+        return sum + diff * 20; // 1게임 차이당 20점
+    }, 0);
+
+    // (7) 랜덤 노이즈: 동일 점수 조합 간 무작위 선택 (0~8)
     const noise = Math.random() * 8;
 
-    return repeatPenalty + playingPenalty + tierScore + mixedPenalty + freshness * 5 + urgentScore + noise;
+    return repeatPenalty + playingPenalty + tierScore + mixedPenalty
+         + freshness * 5 + urgentScore + gameCountPenalty + noise;
 }
 
 /**
@@ -651,6 +686,9 @@ function autoMatch() {
     }
 
     let pool = getAvailable();
+
+    // 게임수 균등 필터: 게임 많이 한 사람 우선 제외
+    pool = filterByGameCount(pool);
 
     // 성별 필터 (남복/여복/혼복 모드)
     if (type === 'doubles_m') {
