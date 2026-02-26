@@ -87,13 +87,13 @@ body { font-family:'Noto Sans KR','Outfit',system-ui,sans-serif; background:var(
 .badge { display:inline-flex; align-items:center; justify-content:center; min-width:20px; height:20px; padding:0 6px; border-radius:10px; font-size:.7rem; font-weight:700; background:var(--green-bg2); color:var(--green); }
 
 /* ========== MAIN LAYOUT ========== */
-.app-main { display:flex; flex-direction:column; height:calc(100vh - 54px); padding:16px; gap:16px; }
+.app-main { display:flex; flex-direction:column; height:calc(100vh - 54px); padding:16px; gap:16px; min-width:0; }
 
 /* ========== COURTS ========== */
-.section-courts { flex:0 0 auto; }
+.section-courts { flex:0 0 auto; min-width:0; }
 .section-bar { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
 .section-bar h2 { font-size:.95rem; font-weight:700; }
-.courts-row { display:flex; gap:12px; overflow-x:auto; padding-bottom:4px; }
+.courts-row { display:flex; gap:12px; overflow-x:auto; padding-bottom:4px; min-width:0; }
 
 .court-card {
     flex:0 0 320px;
@@ -167,13 +167,13 @@ body { font-family:'Noto Sans KR','Outfit',system-ui,sans-serif; background:var(
 .level-dot.E { background:#7c3aed; }
 
 /* ========== BOTTOM SPLIT ========== */
-.section-bottom { flex:1; display:flex; gap:16px; min-height:0; }
+.section-bottom { flex:1; display:flex; gap:16px; min-height:0; min-width:0; overflow:hidden; }
 
 /* ========== PANEL (shared) ========== */
 .panel {
     display:flex; flex-direction:column;
     background:#fff; border:1px solid var(--brd);
-    border-radius:var(--r-lg); min-height:0;
+    border-radius:var(--r-lg); min-height:0; min-width:0;
     box-shadow:var(--shadow);
     overflow:hidden;
 }
@@ -205,15 +205,16 @@ body { font-family:'Noto Sans KR','Outfit',system-ui,sans-serif; background:var(
 .chip:hover { color:var(--txt2); background:var(--bg3); }
 .chip.active { background:var(--green-bg2); border-color:var(--green-border); color:var(--green-d); font-weight:700; }
 
-.player-scroll { flex:1; overflow-y:auto; padding:10px; }
+.player-scroll { flex:1; overflow-y:auto; overflow-x:hidden; padding:10px; }
 .player-list { display:flex; flex-wrap:wrap; gap:8px; align-content:flex-start; }
 
 /* --- Player Card (pc) --- */
 .pc {
     display:flex; flex-direction:column; gap:4px;
-    padding:10px 14px; width:175px;
+    padding:10px 14px; width:175px; max-width:calc(50% - 4px);
     border-radius:var(--r-lg); cursor:pointer; transition:all .15s;
     position:relative; border:2px solid transparent;
+    box-sizing:border-box;
 }
 .pc:hover { filter:brightness(.96); box-shadow:var(--shadow); }
 .pc.selected { border-color:var(--green); box-shadow:0 0 0 3px var(--green-bg2); }
@@ -488,93 +489,103 @@ body { font-family:'Noto Sans KR','Outfit',system-ui,sans-serif; background:var(
 .toast.info { border-left:3px solid var(--blue); }
 @keyframes tin { from{transform:translateX(100%);opacity:0} to{transform:translateX(0);opacity:1} }
 
+
 /* ========== RESPONSIVE ========== */
-/* ========== RESPONSIVE - TABLET (≤1024px) ========== */
-@media(max-width:1024px) {
-    .section-bottom { flex-direction:column; }
-    .panel-players { flex:none; max-height:45vh; }
-    .panel-match { flex:none; }
-    .court-card { flex:0 0 260px; }
+
+/* TABLET LANDSCAPE (max 1200px) */
+@media(max-width:1200px) {
+    html { font-size:13px; }
+    .court-card { flex:0 0 280px; }
+    .pc { width:160px; }
 }
 
-/* ========== RESPONSIVE - MOBILE (≤768px) ========== */
+/* TABLET (max 1024px) */
+@media(max-width:1024px) {
+    html { font-size:12.5px; }
+    .app-main { height:auto; min-height:calc(100vh - 54px); overflow-y:auto; }
+    /* 가로 배치 유지, 비율만 조정 */
+    .section-bottom { flex-direction:row; }
+    .panel-players { flex:1; min-height:400px; }
+    .panel-match { flex:1; min-height:400px; }
+    .courts-row { flex-direction:row; overflow-x:auto; }
+    .court-card { flex:0 0 260px; }
+    .pc { width:calc(50% - 4px); }
+    .court-name { font-size:.88rem; }
+    .court-timer { font-size:.95rem; }
+    .court-body { padding:12px; min-height:80px; }
+    .court-team { padding:8px 10px; }
+    .team-player { font-size:.85rem; }
+}
+
+/* MOBILE (max 768px) */
 @media(max-width:768px) {
-    /* 헤더 */
+    html { font-size:12px; }
     .app-header { padding:0 10px; height:48px; }
     .header-center { display:none; }
     .header-right { gap:5px; }
-    .header-right .btn { padding:5px 8px; font-size:.7rem; }
-
-    /* 메인 레이아웃 */
-    .app-main { padding:8px; gap:8px; height:auto; min-height:calc(100vh - 48px); }
-    .section-bottom { flex-direction:column; }
-
-    /* 코트 - 가로 스크롤 유지 */
-    .courts-row { flex-direction:row; gap:8px; }
-    .court-card { flex:0 0 260px; }
-    .section-bar h2 { font-size:.85rem; }
-
-    /* 패널 */
-    .panel-players { flex:none; max-height:50vh; }
-    .panel-match { flex:none; }
+    .header-right .btn { padding:5px 10px; font-size:.72rem; }
+    .app-main { padding:8px; gap:10px; }
+    .section-bar h2 { font-size:.88rem; }
+    .courts-row { gap:8px; padding-bottom:8px; }
+    .court-card { flex:0 0 270px; }
+    .court-name { font-size:.9rem; }
+    .court-timer { font-size:.95rem; }
+    .court-status { font-size:.7rem; padding:3px 9px; }
+    .court-body { padding:12px; min-height:80px; }
+    .court-team { padding:8px 10px; font-size:.85rem; }
+    .team-player { font-size:.85rem; }
+    .court-foot .btn { font-size:.8rem; padding:8px 0; }
+    .panel-players { min-height:250px; }
+    .panel-match { min-height:350px; }
     .panel-head { padding:10px 12px; }
-    .panel-head h3 { font-size:.82rem; }
-
-    /* 플레이어 카드 - 모바일에서 더 작게 */
-    .pc { width:130px; padding:6px 10px; }
-    .pc-name { font-size:.82rem; }
-    .pc-game-badge { min-width:22px; height:22px; font-size:.75rem; }
+    .panel-head h3 { font-size:.85rem; }
+    .pc { width:calc(50% - 4px); padding:8px 10px; }
+    .pc-name { font-size:.88rem; }
+    .pc-game-badge { min-width:24px; height:24px; font-size:.78rem; }
+    .pc-shuttle { width:24px; height:24px; font-size:.78rem; }
     .player-list { gap:6px; }
-
-    /* 필터 */
     .filter-row { padding:6px 10px; gap:3px; overflow-x:auto; flex-wrap:nowrap; }
-    .chip { padding:3px 10px; font-size:.68rem; flex-shrink:0; }
-
-    /* 매칭 바 */
+    .chip { padding:4px 10px; font-size:.7rem; flex-shrink:0; }
     .match-bar { flex-direction:column; align-items:stretch; gap:8px; padding:8px 12px; }
-    .type-tabs { flex-wrap:wrap; gap:3px; }
-    .type-tab { padding:4px 10px; font-size:.68rem; }
-    .rules-note { font-size:.65rem; padding:6px 10px; }
-
-    /* 미리보기 */
+    .type-tabs { flex-wrap:wrap; gap:4px; }
+    .type-tab { padding:5px 12px; font-size:.7rem; }
+    .rules-note { font-size:.68rem; padding:6px 10px; }
     .preview-area { padding:8px 10px; }
-    .preview-teams { flex-direction:column; gap:6px; }
-    .preview-vs { transform:rotate(0); }
-
-    /* 대기열 카드 */
-    .q-game-body { flex-direction:column; gap:4px; padding:8px 10px; }
-    .q-vs { font-size:.7rem; }
-    .q-player { font-size:.7rem; padding:3px 8px; }
-
-    /* 검색 */
-    .search-input { width:120px; font-size:.72rem; }
-
-    /* 모달 */
+    .preview-teams { flex-direction:column; gap:8px; }
+    .queue-head { font-size:.88rem; padding:10px 12px; }
+    .q-game-body { flex-direction:column; gap:6px; padding:10px 12px; }
+    .q-vs { font-size:.78rem; }
+    .q-player { font-size:.78rem; padding:5px 10px; }
+    .q-player-name { font-size:.82rem; }
+    .search-input { width:120px; font-size:.74rem; }
     .modal { width:96%; max-height:85vh; }
     .modal-lg { max-width:100%; }
 }
 
-/* ========== RESPONSIVE - SMALL MOBILE (≤480px) ========== */
+/* SMALL MOBILE (max 480px) */
 @media(max-width:480px) {
+    html { font-size:11.5px; }
     .app-header { height:44px; }
     .logo h1 { font-size:.85rem; }
-    .header-right .btn-history, .header-right .btn-save { display:none; }
-
-    .court-card { flex:0 0 240px; }
+    .header-right .btn-history, .header-right .btn-save { font-size:.65rem; padding:4px 7px; }
+    .court-card { flex:0 0 250px; }
+    .court-name { font-size:.85rem; }
+    .court-timer { font-size:.88rem; }
     .court-body { padding:10px; min-height:70px; }
-    .court-team { padding:5px 8px; font-size:.78rem; }
-
-    .pc { width:calc(50% - 4px); }
-    .pc-name { font-size:.78rem; }
+    .court-team { padding:6px 8px; font-size:.78rem; }
+    .team-player { font-size:.78rem; }
+    .pc { width:calc(50% - 4px); padding:6px 8px; }
+    .pc-name { font-size:.8rem; }
     .pc-tags { gap:3px; }
     .pc-lv { font-size:.58rem; padding:1px 4px; }
-    .pc-gender { font-size:.55rem; }
-    .pc-status { font-size:.55rem; padding:1px 5px; }
-
-    .q-game-header { padding:6px 10px; }
-    .q-player-name { font-size:.7rem; }
-    .q-player-info { font-size:.58rem; }
-
+    .pc-gender { font-size:.58rem; padding:1px 4px; }
+    .pc-status { font-size:.58rem; padding:2px 6px; }
+    .pc-game-badge { min-width:22px; height:22px; font-size:.72rem; }
+    .pc-shuttle { width:22px; height:22px; font-size:.72rem; }
+    .q-game-header { padding:8px 10px; }
+    .q-game-num { width:24px; height:24px; font-size:.7rem; }
+    .q-player-name { font-size:.75rem; }
+    .q-player-info { font-size:.62rem; }
     .match-bar { padding:6px 10px; }
     .panel-foot { padding:8px 10px; }
 }

@@ -2,9 +2,9 @@
    버티컬 배드민턴 매칭 시스템 v2
    ============================================
    매칭 규칙:
-   1. D·E끼리 / A·B·C끼리 우선 매칭 (2~3게임)
-   2. 교차 매칭 A·B·C + D·E (1게임 비율)
-   3. 급수 밸런스: 팀 급수합 차이 최소
+   1. 비슷한 급수끼리 우선 (같은 티어 1회 → 교차 1회)
+   2. 급수 밸런스: 팀 급수합 차이 최소
+   3. 남복/여복 우선, 혼복은 비율 적게
    4. 남남남여 / 여여여남 (3:1) 금지
    5. 3게임 이상 쉬지 않도록 우선 배정
    6. 같은 4명 조합 반복 방지
@@ -21,10 +21,14 @@ const CONFIG = {
     UPPER: ['A','B','C'],
     LOWER: ['D','E'],
     MAX_REST: 3,
-    // 동일 티어 매칭 : 교차 매칭 비율 (3:1 = 75% 동일, 25% 교차)
-    SAME_TIER_RATIO: 3,
+    // 동일 티어 매칭 : 교차 매칭 비율 (1:1 = 50% 동일, 50% 교차)
+    SAME_TIER_RATIO: 1,
     // 최소 N게임 이내 같은 4인 조합 반복 금지
     MIN_NO_REPEAT: 5,
+    // 혼복 동적 패널티 기본값 (남복/여복 우선)
+    MIXED_PENALTY_BASE: 60,
+    // 혼복 목표 비율 (0.15 = 약 15%, 7게임 중 1게임)
+    MIXED_TARGET_RATIO: 0.15,
 };
 
 const S = {
@@ -35,6 +39,7 @@ const S = {
     selectedIds: [],
     sheetMembers: [],
     matchHistory: [],   // 과거 매칭 조합 기록 (Set of sorted id strings)
+    gameTypeHistory: [], // 게임 타입 히스토리 (남복/여복/혼복 비율 추적)
     matchCounter: 0,    // 총 매칭 횟수 (비율 계산용)
     gameLog: [],        // 완료된 게임 기록 [{gameNum, type, court, teamA:[{name,level,gender}], teamB:[...], duration, time}]
     _cid:0, _pid:0, _gid:0,
@@ -403,8 +408,19 @@ function bestSplit(four) {
     return best || { teamA:[four[0],four[3]], teamB:[four[1],four[2]], diff:99 };
 }
 
+/** Fisher-Yates 셔플 */
+function shuffle(arr) {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+}
+
 function sortPriority(arr) {
-    return [...arr].sort((a,b) => {
+    // 먼저 셔플해서 동일 조건 내 무작위성 보장
+    return shuffle(arr).sort((a,b) => {
         // 1) 대기중 우선 (playing은 뒤로)
         const aWait = a.status === 'waiting' ? 0 : 1;
         const bWait = b.status === 'waiting' ? 0 : 1;
@@ -413,7 +429,7 @@ function sortPriority(arr) {
         if (b.restCount !== a.restCount) return b.restCount - a.restCount;
         // 3) 게임 적은 사람 우선
         if (a.gameCount !== b.gameCount) return a.gameCount - b.gameCount;
-        return Math.random() - 0.5; 
+        return 0; // 동일 조건 → 셔플 순서 유지 (무작위)
     });
 }
 
@@ -485,41 +501,106 @@ function recentRepeatDistance(four) {
 }
 
 /**
+ * 동적 혼복 패널티 계산
+ * 남녀 인원 비율 + 최근 게임 타입 비율을 종합 판단
+ * 
+ * 원리:
+ * - 남녀 균등(1:1) → 혼복 패널티 높음 (남복/여복 위주)
+ * - 남녀 불균형(예: 12:8) → 혼복 패널티 낮아짐 (소수 성별 기회 보장)
+ * - 최근 혼복 비율이 목표 초과 → 패널티 추가 상승
+ * - 최근 혼복 비율이 목표 미만 → 패널티 추가 감소
+ */
+function getDynamicMixedPenalty() {
+    // 1) 현재 가용 인원의 남녀 비율 파악
+    const available = getAvailable();
+    const mCount = available.filter(p => p.gender === '남').length;
+    const fCount = available.filter(p => p.gender === '여').length;
+    const total = mCount + fCount;
+
+    if (total < 4) return CONFIG.MIXED_PENALTY_BASE;
+
+    // 남녀 균형도: 0(완전 균등) ~ 1(한쪽만)
+    const genderImbalance = Math.abs(mCount - fCount) / total;
+    // 소수 성별이 4명 미만이면 남복/여복 자체가 불가
+    const minGender = Math.min(mCount, fCount);
+
+    // 2) 남녀 비율 기반 기본 패널티 결정
+    let basePenalty;
+    if (minGender < 4) {
+        // 소수 성별 4명 미만 → 혼복 필수 (패널티 없음)
+        basePenalty = 0;
+    } else if (genderImbalance > 0.4) {
+        // 심한 불균형 (예: 14:6) → 혼복 패널티 매우 낮게
+        basePenalty = CONFIG.MIXED_PENALTY_BASE * 0.2;
+    } else if (genderImbalance > 0.2) {
+        // 약간 불균형 (예: 12:8) → 혼복 패널티 낮게
+        basePenalty = CONFIG.MIXED_PENALTY_BASE * 0.5;
+    } else {
+        // 균등 (예: 10:10) → 혼복 패널티 높게 (남복/여복 위주)
+        basePenalty = CONFIG.MIXED_PENALTY_BASE;
+    }
+
+    // 3) 최근 게임 타입 비율로 보정
+    const history = S.gameTypeHistory || [];
+    if (history.length >= 3) {
+        const recent = history.slice(-10);
+        const mixedRatio = recent.filter(t => t === '혼복').length / recent.length;
+        const targetRatio = CONFIG.MIXED_TARGET_RATIO;
+
+        if (mixedRatio < targetRatio * 0.3) {
+            basePenalty *= 0;     // 혼복 너무 적음 → 패널티 제거
+        } else if (mixedRatio < targetRatio) {
+            basePenalty *= 0.5;   // 목표 미만 → 절반
+        } else if (mixedRatio > targetRatio * 2) {
+            basePenalty *= 2;     // 목표 초과 → 2배
+        }
+        // 목표 근처면 basePenalty 그대로
+    }
+
+    return basePenalty;
+}
+
+/**
  * 점수 계산: 낮을수록 좋은 매칭
+ * 랜덤 노이즈를 추가해 동일 점수 조합 간 무작위성 보장
  */
 function scoreCombo(four) {
     // (0) 최근 N게임 이내 동일 4인 조합 → 매우 큰 패널티
     const repeatDist = recentRepeatDistance(four);
     let repeatPenalty = 0;
     if (repeatDist > 0) {
-        // 직전 게임이면 9999, 2게임 전이면 5000, ... 멀수록 패널티 감소
         repeatPenalty = Math.max(500, 10000 - repeatDist * 1500);
     }
 
-    // (1) playing 포함: 약한 패널티 (밸런스보다는 덜 중요)
+    // (1) playing 포함: 약한 패널티
     const playingCount = four.filter(p => p.status === 'playing').length;
     const playingPenalty = playingCount * 15;
 
-    // (2) 티어: 같은 티어끼리 강하게 보너스
-    const upCount = four.filter(p => CONFIG.UPPER.includes(p.level)).length;
-    const loCount = four.filter(p => CONFIG.LOWER.includes(p.level)).length;
-    let tierScore = 0;
-    if (upCount === 4 || loCount === 4) {
-        tierScore = 0;    // 완벽한 동일 티어 ★
-    } else if (upCount === 3 || loCount === 3) {
-        tierScore = 25;   // 3:1 → 약간 패널티
-    } else {
-        tierScore = 60;   // 2:2 교차 → 큰 패널티
-    }
+    // (2) 급수 유사도: 개인 급수 차이 기반 (비슷한 급수끼리 우선)
+    const levels = four.map(p => CONFIG.LV[p.level] || 3);
+    const maxLv = Math.max(...levels);
+    const minLv = Math.min(...levels);
+    const levelSpread = maxLv - minLv; // 0~4
+    const tierScore = levelSpread <= 1 ? levelSpread * 10
+                    : levelSpread === 2 ? 30
+                    : levelSpread === 3 ? 55 : 80;
 
-    // (3) urgent 보너스 (오래 쉰 사람 포함하면 감점)
+    // (3) 혼복 동적 패널티: 최근 비율에 따라 자동 조절
+    const mCount = four.filter(p => p.gender === '남').length;
+    const fCount = four.filter(p => p.gender === '여').length;
+    const mixedPenalty = (mCount === 2 && fCount === 2) ? getDynamicMixedPenalty() : 0;
+
+    // (4) urgent 보너스 (오래 쉰 사람 포함하면 감점)
     const urgent = four.filter(p => p.restCount >= CONFIG.MAX_REST);
     const urgentScore = -urgent.length * 30;
 
-    // (4) 신선도 (같이 한 적 적은 조합 우선)
+    // (5) 신선도 (같이 한 적 적은 조합 우선)
     const freshness = comboFreshness(four);
 
-    return repeatPenalty + playingPenalty + tierScore + freshness * 5 + urgentScore;
+    // (6) 랜덤 노이즈: 동일 점수 조합 간 무작위 선택 (0~8)
+    const noise = Math.random() * 8;
+
+    return repeatPenalty + playingPenalty + tierScore + mixedPenalty + freshness * 5 + urgentScore + noise;
 }
 
 /**
@@ -529,8 +610,8 @@ function scoreCombo(four) {
 function findBestFour(pool) {
     if (pool.length < 4) return null;
 
-    const sorted = sortPriority(pool);
-    const candidates = sorted.slice(0, Math.min(sorted.length, 14));
+    const sorted = sortPriority(pool); // 이미 셔플 포함
+    const candidates = sorted.slice(0, Math.min(sorted.length, 16));
 
     let bestCombo = null;
     let bestScore = Infinity;
@@ -558,8 +639,8 @@ function findBestFour(pool) {
 }
 
 /**
- * 자동매칭: 전체 풀(대기+게임중)에서 점수 기반 최적 매칭
- * scoreCombo가 대기자 우선 + 같은 티어 우선을 자동 판단
+ * 자동매칭: 전체 풀에서 scoreCombo 점수 기반 최적 매칭
+ * 동적 혼복 패널티가 비율을 자동 조절
  */
 function autoMatch() {
     const type = S.matchType;
@@ -571,7 +652,7 @@ function autoMatch() {
 
     let pool = getAvailable();
 
-    // 성별 필터
+    // 성별 필터 (남복/여복/혼복 모드)
     if (type === 'doubles_m') {
         pool = pool.filter(p => p.gender === '남');
     } else if (type === 'doubles_f') {
@@ -588,9 +669,24 @@ function autoMatch() {
         if (m < 2 || f < 2) { toast('남녀 각 2명 이상 필요', 'err'); return; }
     }
 
-    let four = (type === 'mixed') ? pickMixed(pool) : findBestFour(pool);
+    let four = null;
+
+    if (type === 'auto') {
+        // 전체 풀에서 매칭 — scoreCombo의 동적 혼복 패널티가 비율 조절
+        four = findBestFour(pool);
+    } else if (type === 'mixed') {
+        four = pickMixed(pool);
+    } else {
+        four = findBestFour(pool);
+    }
 
     if (!four) { toast('조건에 맞는 매칭이 없습니다', 'err'); return; }
+
+    const gameType = getGameType(four);
+
+    // 게임 타입 히스토리 추적
+    if (!S.gameTypeHistory) S.gameTypeHistory = [];
+    S.gameTypeHistory.push(gameType);
 
     const split = bestSplit(four);
     const allIds = four.map(p => p.id);
@@ -603,7 +699,7 @@ function autoMatch() {
         toast(`연속게임: ${playingNames.join(',')} (현재 게임 끝나면 시작)`, 'info');
     }
 
-    addToQueue(split.teamA.map(p=>p.id), split.teamB.map(p=>p.id), getGameType(four));
+    addToQueue(split.teamA.map(p=>p.id), split.teamB.map(p=>p.id), gameType);
 }
 
 function pickMixed(pool) {
