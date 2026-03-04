@@ -2,14 +2,13 @@
    버티컬 배드민턴 매칭 시스템 v2
    ============================================
    매칭 규칙:
-   1. 비슷한 급수끼리 우선 · 급수 밸런스
-   2. 남복/여복 우선, 혼복은 남녀비율에 따라 동적 조절
-   3. 남남남여 / 여여여남 (3:1) 금지
-   4. 매칭 풀: 코트/대기열에 없는 인원만 (순수 대기자 기반)
-   5. 자동 대기열 최대 2게임 (추가는 수동)
-   6. 8게임 이상 쉬지 않도록 우선 배정
-   7. 같은 4명 조합 반복 방지
-   8. 게임수 최대 2게임 차이 이내
+   1. 그룹 매칭: 1그룹(DE) / 2그룹(ABC) 우선 (7:3 비율)
+   2. 여자A 1명일 때: 남자 B~D와 3:1 매칭 허용
+   3. 교차 허용: B+D, C+E까지 (8게임 쉰 사람은 제한 면제)
+   4. 남복/여복 우선, 혼복 동적 조절
+   5. 순수 대기자 기반 · 대기열 최대 2게임
+   6. 8게임 이상 쉬지 않도록 강제 배정
+   7. 같은 4명 조합 반복 방지 · 게임수 균등 (점수 기반)
    ============================================ */
 
 const CONFIG = {
@@ -19,13 +18,19 @@ const CONFIG = {
     APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbwpV9oleWJ8uLDD7u86k60sl6FyFeOQv0HwlygbhqUp7F6OSNsk9E58b79C10Of-q3Z/exec',
     DEFAULT_COURTS: 3,
     LV: { A:5, B:4, C:3, D:2, E:1 },
-    UPPER: ['A','B','C'],
-    LOWER: ['D','E'],
+    UPPER: ['A','B','C'],  // 2그룹
+    LOWER: ['D','E'],      // 1그룹
+    // 여자A 3:1 예외: 여자A 2명 미만일 때 남자 B~D와 3:1 허용
+    FEMALE_A_31_MIN_MALE: 'B',  // 남자 최고급수 (A는 빡세니 B부터)
+    FEMALE_A_31_MAX_MALE: 'D',  // 남자 최저급수
     MAX_REST: 8,
     // 자동 매칭 대기열 최대 게임 수
     MAX_QUEUE: 2,
-    // 동일 티어 매칭 : 교차 매칭 비율 (1:1 = 50% 동일, 50% 교차)
-    SAME_TIER_RATIO: 1,
+    // 그룹 내 : 교차 매칭 비율 (7:3 = 70% 같은 그룹, 30% 교차)
+    SAME_GROUP_RATIO: 7,
+    CROSS_GROUP_RATIO: 3,
+    // 교차 매칭 허용 범위: B+D, C+E까지 (실효급수 차이 2 이내)
+    MAX_CROSS_SPREAD: 2,
     // 최소 N게임 이내 같은 4인 조합 반복 금지
     MIN_NO_REPEAT: 5,
     // 혼복 동적 패널티 기본값 (남복/여복 우선)
@@ -45,6 +50,7 @@ const S = {
     sheetMembers: [],
     matchHistory: [],   // 과거 매칭 조합 기록 (Set of sorted id strings)
     gameTypeHistory: [], // 게임 타입 히스토리 (남복/여복/혼복 비율 추적)
+    groupMatchHistory: [], // 그룹 매칭 히스토리 (same/cross 추적)
     matchCounter: 0,    // 총 매칭 횟수 (비율 계산용)
     gameLog: [],        // 완료된 게임 기록 [{gameNum, type, court, teamA:[{name,level,gender}], teamB:[...], duration, time}]
     _cid:0, _pid:0, _gid:0,
@@ -55,6 +61,55 @@ const $ = s => document.querySelector(s);
 const $$ = s => document.querySelectorAll(s);
 const genId = p => `${p}_${++S[`_${p[0]}id`]}`;
 const lvVal = lv => CONFIG.LV[lv] || 0;
+
+/**
+ * 플레이어의 그룹 (원래 급수 기준)
+ * 2그룹: A, B, C  /  1그룹: D, E
+ */
+function getGroup(player) {
+    return CONFIG.UPPER.includes(player.level) ? 2 : 1;
+}
+
+/**
+ * 여자A 3:1 예외 체크
+ * 조건: 여자A가 전체에서 2명 미만 + 남3여1 구성 + 여자가 A급 + 남자가 B~D 범위
+ */
+function isFemaleA31Exception(four) {
+    const males = four.filter(p => p.gender === '남');
+    const females = four.filter(p => p.gender === '여');
+    
+    // 3:1 구성인지 (남3여1)
+    if (males.length !== 3 || females.length !== 1) return false;
+    
+    const female = females[0];
+    // 여자가 A급인지
+    if (female.level !== 'A') return false;
+    
+    // 전체 여자A가 2명 미만인지
+    const totalFemaleA = S.players.filter(p => p.gender === '여' && p.level === 'A' && (p.status === 'waiting' || p.status === 'playing')).length;
+    if (totalFemaleA >= 2) return false;
+    
+    // 남자 급수 범위 체크: B~D (A는 빡셈, E는 너무 차이남)
+    const minMaleLv = CONFIG.LV[CONFIG.FEMALE_A_31_MIN_MALE]; // B=4
+    const maxMaleLv = CONFIG.LV[CONFIG.FEMALE_A_31_MAX_MALE]; // D=2
+    const allMalesInRange = males.every(p => {
+        const lv = CONFIG.LV[p.level];
+        return lv >= maxMaleLv && lv <= minMaleLv; // D(2) ~ B(4)
+    });
+    
+    return allMalesInRange;
+}
+
+/**
+ * 4명이 교차 매칭 허용 범위 내인지 체크
+ * B+D, C+E까지 허용 (급수 차이 MAX_CROSS_SPREAD 이내)
+ */
+function isCrossAllowed(four) {
+    const levels = four.map(p => CONFIG.LV[p.level] || 3);
+    const maxLv = Math.max(...levels);
+    const minLv = Math.min(...levels);
+    return (maxLv - minLv) <= CONFIG.MAX_CROSS_SPREAD;
+}
 
 // ============ UTIL ============
 function toast(msg, type='info') {
@@ -386,7 +441,16 @@ function changeStatus(newStatus) {
 function isValidGender(players) {
     const m = players.filter(p => p.gender === '남').length;
     const f = players.filter(p => p.gender === '여').length;
-    return !((m === 3 && f === 1) || (m === 1 && f === 3));
+    
+    // 4:0 또는 2:2는 항상 OK
+    if (m === 4 || f === 4 || (m === 2 && f === 2)) return true;
+    
+    // 3:1 → 기본적으로 금지, 단 여자A 예외
+    if ((m === 3 && f === 1) || (m === 1 && f === 3)) {
+        return isFemaleA31Exception(players);
+    }
+    
+    return false;
 }
 
 function getGameType(players) {
@@ -395,6 +459,7 @@ function getGameType(players) {
     if (m === 4) return '남복';
     if (f === 4) return '여복';
     if (m === 2 && f === 2) return '혼복';
+    if (m === 3 && f === 1) return '혼합'; // 여자A 3:1 예외
     return '혼합';
 }
 
@@ -406,6 +471,12 @@ function bestSplit(four) {
         const tA = aI.map(i => four[i]), tB = bI.map(i => four[i]);
         if (type === '혼복') {
             if (tA.filter(p => p.gender === '남').length !== 1) continue;
+        }
+        // 혼합(3:1): 여자가 한쪽 팀에 포함되도록
+        if (type === '혼합') {
+            const fInA = tA.filter(p => p.gender === '여').length;
+            const fInB = tB.filter(p => p.gender === '여').length;
+            if (fInA !== 1 && fInB !== 1) continue; // 여자가 한쪽에 1명
         }
         const diff = Math.abs(tA.reduce((s,p) => s+lvVal(p.level),0) - tB.reduce((s,p) => s+lvVal(p.level),0));
         if (diff < bestDiff) { bestDiff = diff; best = { teamA:tA, teamB:tB, diff }; }
@@ -480,27 +551,8 @@ function getUrgentPlayers(pool) {
     return pool.filter(p => p.restCount >= CONFIG.MAX_REST);
 }
 
-/**
- * 게임수 차이 필터: MAX_GAME_DIFF 이상 차이나는 사람 제외
- * 단, 필터 후 4명 미만이면 필터 해제 (게임 진행 우선)
- */
-function filterByGameCount(pool) {
-    const minGC = getMinGameCount();
-    const filtered = pool.filter(p => p.gameCount < minGC + CONFIG.MAX_GAME_DIFF);
-    if (filtered.length < 4) return pool; // 기존 로직
-    
-    // ✅ 추가: 필터 후 유효한 4인 조합(성별 통과)이 하나도 없으면 필터 해제
-    const hasValidCombo = checkHasValidCombo(filtered);
-    return hasValidCombo ? filtered : pool;
-}
-
-function checkHasValidCombo(pool) {
-    if (pool.length < 4) return false;
-    const males = pool.filter(p => p.gender === '남');
-    const females = pool.filter(p => p.gender === '여');
-    // 남4, 여4, 혼복(남2여2) 중 하나라도 가능한지 체크
-    return males.length >= 4 || females.length >= 4 || (males.length >= 2 && females.length >= 2);
-}
+// 게임수 균등: 강제 차단 대신 scoreCombo의 gameCountPenalty로 자연 조절
+// filterByGameCount 제거 → 풀에서 빼지 않아 매칭 끊김 방지
 
 /** 대기중인 사람만 */
 function getWaitingOnly() {
@@ -550,6 +602,30 @@ function recentRepeatDistance(four) {
         if (recent[i] === key) return recent.length - i; // 1 = 직전, 2 = 2게임전...
     }
     return -1;
+}
+
+/**
+ * 동적 교차 매칭 패널티 (7:3 비율 자동 조절)
+ * 최근 교차 비율이 목표(30%)보다 높으면 패널티 증가, 낮으면 감소
+ */
+function getDynamicCrossPenalty() {
+    const history = S.groupMatchHistory || [];
+    if (history.length < 3) return 50; // 초반 기본값
+
+    const recent = history.slice(-10);
+    const crossCount = recent.filter(t => t === 'cross').length;
+    const crossRatio = crossCount / recent.length;
+    const targetRatio = CONFIG.CROSS_GROUP_RATIO / (CONFIG.SAME_GROUP_RATIO + CONFIG.CROSS_GROUP_RATIO); // 0.3
+
+    if (crossRatio < targetRatio * 0.3) {
+        return 0;    // 교차 너무 적음 → 패널티 없음 (교차 유도)
+    } else if (crossRatio < targetRatio) {
+        return 25;   // 목표 미만 → 약한 패널티
+    } else if (crossRatio < targetRatio * 1.5) {
+        return 50;   // 목표 근처 → 기본 패널티
+    } else {
+        return 100;  // 목표 초과 → 강한 패널티 (같은 그룹 유도)
+    }
 }
 
 /**
@@ -627,14 +703,31 @@ function scoreCombo(four) {
     // (1) 모든 후보가 순수 대기자이므로 playing 패널티 불필요
     const playingPenalty = 0;
 
-    // (2) 급수 유사도: 개인 급수 차이 기반 (비슷한 급수끼리 우선)
-    const levels = four.map(p => CONFIG.LV[p.level] || 3);
-    const maxLv = Math.max(...levels);
-    const minLv = Math.min(...levels);
-    const levelSpread = maxLv - minLv; // 0~4
-    const tierScore = levelSpread <= 1 ? levelSpread * 10
-                    : levelSpread === 2 ? 30
-                    : levelSpread === 3 ? 55 : 80;
+    // (2) 그룹 매칭 점수 (실효급수 기반)
+    //     같은 그룹 4명: 보너스 / 교차: 동적 패널티 / 범위 초과: 차단
+    const groups = four.map(p => getGroup(p));
+    const g1Count = groups.filter(g => g === 1).length; // 1그룹(DE) 수
+    const g2Count = groups.filter(g => g === 2).length; // 2그룹(ABC) 수
+    const isSameGroup = (g1Count === 4 || g2Count === 4);
+    const isCross = !isSameGroup;
+
+    // 교차 매칭인데 허용 범위 초과 → 사실상 차단
+    // 단, 8게임 이상 쉰 urgent 선수 포함 시 차단 면제
+    const hasUrgent = four.some(p => p.restCount >= CONFIG.MAX_REST);
+    if (isCross && !isCrossAllowed(four) && !hasUrgent) {
+        return 9000 + Math.random() * 8;
+    }
+
+    // 그룹 점수: 같은 그룹이면 0, 교차면 동적 패널티
+    let tierScore = 0;
+    if (isCross) {
+        tierScore = getDynamicCrossPenalty();
+    }
+
+    // 같은 그룹 내에서도 급수 차이가 작을수록 보너스
+    const lvls = four.map(p => CONFIG.LV[p.level] || 3);
+    const lvSpread = Math.max(...lvls) - Math.min(...lvls);
+    tierScore += lvSpread * 8; // 급수 차이 1당 8점
 
     // (3) 혼복 동적 패널티: 최근 비율에 따라 자동 조절
     const mCount = four.filter(p => p.gender === '남').length;
@@ -667,10 +760,15 @@ function scoreCombo(four) {
 
 /**
  * 풀에서 최적의 4명 찾기
- * scoreCombo가 알아서 대기자 우선 + 티어 밸런스 + 신선도 종합 판단
+ * 강제 포함 선수가 있으면 반드시 포함시킨 상태에서 나머지를 찾음
  */
-function findBestFour(pool) {
+function findBestFour(pool, forcedPlayers) {
     if (pool.length < 4) return null;
+
+    // 강제 포함 선수가 있으면 해당 선수 고정 + 나머지에서 보충
+    if (forcedPlayers && forcedPlayers.length > 0) {
+        return findBestFourWithForced(pool, forcedPlayers);
+    }
 
     const sorted = sortPriority(pool); // 이미 셔플 포함
     const candidates = sorted.slice(0, Math.min(sorted.length, 16));
@@ -701,6 +799,59 @@ function findBestFour(pool) {
 }
 
 /**
+ * 강제 포함 선수(urgent)를 반드시 넣고 나머지를 최적으로 채움
+ * forced: 1~3명, 나머지를 pool에서 보충
+ */
+function findBestFourWithForced(pool, forced) {
+    const forcedIds = new Set(forced.map(p => p.id));
+    const rest = pool.filter(p => !forcedIds.has(p.id));
+    const need = 4 - forced.length; // 몇 명 더 필요한지
+
+    if (rest.length < need) return null;
+
+    const sorted = sortPriority(rest);
+    const candidates = sorted.slice(0, Math.min(sorted.length, 14));
+
+    let bestCombo = null;
+    let bestScore = Infinity;
+
+    if (need === 3) {
+        for (let a = 0; a < candidates.length - 2; a++) {
+            for (let b = a+1; b < candidates.length - 1; b++) {
+                for (let c = b+1; c < candidates.length; c++) {
+                    const four = [...forced, candidates[a], candidates[b], candidates[c]];
+                    if (!isValidGender(four)) continue;
+                    const score = scoreCombo(four);
+                    if (score < bestScore) { bestScore = score; bestCombo = four; }
+                }
+            }
+        }
+    } else if (need === 2) {
+        for (let a = 0; a < candidates.length - 1; a++) {
+            for (let b = a+1; b < candidates.length; b++) {
+                const four = [...forced, candidates[a], candidates[b]];
+                if (!isValidGender(four)) continue;
+                const score = scoreCombo(four);
+                if (score < bestScore) { bestScore = score; bestCombo = four; }
+            }
+        }
+    } else if (need === 1) {
+        for (let a = 0; a < candidates.length; a++) {
+            const four = [...forced, candidates[a]];
+            if (!isValidGender(four)) continue;
+            const score = scoreCombo(four);
+            if (score < bestScore) { bestScore = score; bestCombo = four; }
+        }
+    } else {
+        // need === 0, forced가 4명
+        if (isValidGender(forced)) return forced;
+        return null;
+    }
+
+    return bestCombo;
+}
+
+/**
  * 자동매칭: 전체 풀에서 scoreCombo 점수 기반 최적 매칭
  * 동적 혼복 패널티가 비율을 자동 조절
  */
@@ -719,9 +870,6 @@ function autoMatch() {
     }
 
     let pool = getAvailable();
-
-    // 게임수 균등 필터: 게임 많이 한 사람 우선 제외
-    pool = filterByGameCount(pool);
 
     // 성별 필터 (남복/여복/혼복 모드)
     if (type === 'doubles_m') {
@@ -743,8 +891,17 @@ function autoMatch() {
     let four = null;
 
     if (type === 'auto') {
-        // 전체 풀에서 매칭 — scoreCombo의 동적 혼복 패널티가 비율 조절
-        four = findBestFour(pool);
+        // 8게임 이상 쉰 사람이 있으면 강제 포함
+        const urgentList = pool.filter(p => p.restCount >= CONFIG.MAX_REST);
+        if (urgentList.length > 0) {
+            // urgent 최대 3명까지 강제 (4명이면 그대로)
+            const forced = urgentList.slice(0, Math.min(urgentList.length, 3));
+            four = findBestFour(pool, forced);
+            // 강제 포함 실패 시 (성별 문제 등) 일반 매칭 시도
+            if (!four) four = findBestFour(pool);
+        } else {
+            four = findBestFour(pool);
+        }
     } else if (type === 'mixed') {
         four = pickMixed(pool);
     } else {
@@ -758,6 +915,12 @@ function autoMatch() {
     // 게임 타입 히스토리 추적
     if (!S.gameTypeHistory) S.gameTypeHistory = [];
     S.gameTypeHistory.push(gameType);
+
+    // 그룹 매칭 히스토리 추적 (같은 그룹 vs 교차)
+    if (!S.groupMatchHistory) S.groupMatchHistory = [];
+    const groups = four.map(p => getGroup(p));
+    const isAllSame = groups.every(g => g === groups[0]);
+    S.groupMatchHistory.push(isAllSame ? 'same' : 'cross');
 
     const split = bestSplit(four);
     const allIds = four.map(p => p.id);
@@ -882,19 +1045,21 @@ function renderPlayers() {
         list.innerHTML = arr.map(p => {
             const statusLabel = {waiting:'대기', playing:'게임중', resting:'휴식', late:'늦참'}[p.status] || p.status;
             const genderCls = p.gender === '남' ? 'male' : 'female';
-            const urgentTag = (p.restCount >= CONFIG.MAX_REST && p.status==='waiting') ? `<span class="pc-urgent">🔥${p.restCount}쉼</span>` : '';
+            const restTag = (p.status === 'waiting' && p.restCount > 0)
+                ? `<span class="pc-rest ${p.restCount >= CONFIG.MAX_REST ? 'urgent' : ''}">${p.restCount}쉼</span>`
+                : '';
             return `
             <div class="pc lv-bg-${p.level} ${p.selected?'selected':''} ${p.status} gender-${genderCls} ${p.shuttle?'shuttle-done':''}" onclick="toggleSelect('${p.id}')">
                 <div class="pc-main">
                     <span class="pc-name">${p.name}</span>
-                    ${urgentTag}
+                    ${restTag}
                     <button class="pc-shuttle ${p.shuttle?'done':''}" onclick="toggleShuttle('${p.id}',event)" title="셔틀콕 제출">${p.shuttle?'🏸':'○'}</button>
                     <span class="pc-game-badge${p.gameCount > 0 ? ' has-games' : ''}">${p.gameCount}</span>
                 </div>
                 <div class="pc-tags">
                     <span class="pc-lv lv-${p.level}">${p.level}</span>
                     <span class="pc-gender ${genderCls}">${p.gender}</span>
-                    ${urgentTag}
+                    ${restTag}
                     <button class="pc-status ${p.status}" onclick="event.stopPropagation();showStatusDropdown('${p.id}',event)">${statusLabel}</button>
                 </div>
                 ${p.status!=='playing'?`<button class="pc-del" onclick="event.stopPropagation();removePlayer('${p.id}')">×</button>`:''}
