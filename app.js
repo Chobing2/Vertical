@@ -208,6 +208,8 @@ async function loadFromSheet() {
         return;
     }
     const members = data.slice(1).map(r => ({ name:(r[0]||'').trim(), gender:(r[1]||'').trim(), level:(r[2]||'C').trim().toUpperCase() })).filter(m => m.name && m.gender);
+    // 가나다순 정렬
+    members.sort((a,b) => a.name.localeCompare(b.name, 'ko'));
     S.sheetMembers = members;
     const existing = new Set(S.players.map(p => p.name));
     el.innerHTML = members.map((m,i) => `
@@ -356,6 +358,21 @@ function endGame(cid) {
     renderAll(); toast(`${court.name} 게임 종료`, 'info');
 }
 
+/** 게임 취소 (삭제): 게임수 증가 없이 선수를 대기로 복귀 */
+function cancelGame(cid) {
+    const court = S.courts.find(x => x.id === cid);
+    if (!court?.game) return;
+    if (!confirm(`${court.name} 게임을 취소하시겠습니까?\n(게임수에 반영되지 않습니다)`)) return;
+    clearInterval(S.timers[cid]); delete S.timers[cid];
+    const playedIds = [...court.game.teamA, ...court.game.teamB];
+    playedIds.forEach(pid => {
+        const p = S.players.find(x => x.id === pid);
+        if (p) { p.status = 'waiting'; }
+    });
+    court.game = null;
+    renderAll(); toast(`${court.name} 게임 취소됨 (기록 미반영)`, 'info');
+}
+
 function autoAssign() {
     while (S.queue.length > 0) {
         const empty = S.courts.find(c => !c.game);
@@ -435,6 +452,19 @@ function changeStatus(newStatus) {
     }
     $('#statusDropdown').classList.remove('show');
     dropdownTarget = null;
+}
+
+/** select 드롭다운에서 직접 상태 변경 */
+function changeStatusDirect(pid, newStatus) {
+    const p = S.players.find(x => x.id === pid);
+    if (!p || p.status === 'playing') return;
+    p.status = newStatus;
+    if (newStatus === 'late' || newStatus === 'resting') {
+        p.selected = false;
+        S.selectedIds = S.selectedIds.filter(id => id !== p.id);
+    }
+    renderAll();
+    toast(`${p.name} → ${newStatus === 'waiting' ? '대기' : newStatus === 'resting' ? '휴식' : '늦참'}`, 'info');
 }
 
 // ============ MATCHING ENGINE ============
@@ -1012,7 +1042,7 @@ function renderCourts() {
             </div>
             <div class="court-foot">
                 ${live
-                    ?`<button class="btn btn-end" onclick="endGame('${c.id}')">🏁 게임 종료</button>`
+                    ?`<button class="btn btn-cancel" onclick="cancelGame('${c.id}')">❌ 취소</button><button class="btn btn-end" onclick="endGame('${c.id}')">🏁 종료</button>`
                     :`<button class="btn btn-start" onclick="startGame('${c.id}')" ${!S.queue.length?'disabled':''}>▶ 게임 시작</button>`}
             </div>
         </div>`;
@@ -1030,39 +1060,42 @@ function renderPlayers() {
         return true;
     });
 
-    // 급수순 정렬 (A→B→C→D→E), 같은 급수 내에서 상태순, 이름순
-    const lvOrd = {A:0, B:1, C:2, D:3, E:4};
-    const stOrd = {waiting:0, resting:1, late:2, playing:3};
+    // 가나다순 정렬 (이름 우선), 같은 이름 내에서 급수순
     arr.sort((a,b) => {
-        if ((lvOrd[a.level]??9) !== (lvOrd[b.level]??9)) return (lvOrd[a.level]??9) - (lvOrd[b.level]??9);
-        if ((stOrd[a.status]??9) !== (stOrd[b.status]??9)) return (stOrd[a.status]??9) - (stOrd[b.status]??9);
         return a.name.localeCompare(b.name, 'ko');
     });
 
     if (!arr.length) {
         list.innerHTML = `<div style="text-align:center;padding:24px;color:var(--txt3);font-size:.82rem">${S.players.length ? '조건에 맞는 인원 없음' : '📥 시트에서 회원을 불러오세요'}</div>`;
     } else {
-        list.innerHTML = arr.map(p => {
-            const statusLabel = {waiting:'대기', playing:'게임중', resting:'휴식', late:'늦참'}[p.status] || p.status;
+        const header = `<div class="pr-header">
+            <span class="h-name">이름</span>
+            <span class="h-lv">급수</span>
+            <span class="h-gender">성별</span>
+            <span class="h-shuttle">콕</span>
+            <span class="h-games">게임</span>
+            <span class="h-rest">쉼</span>
+            <span class="h-status">상태</span>
+        </div>`;
+        list.innerHTML = header + arr.map(p => {
             const genderCls = p.gender === '남' ? 'male' : 'female';
-            const restTag = (p.status === 'waiting' && p.restCount > 0)
-                ? `<span class="pc-rest ${p.restCount >= CONFIG.MAX_REST ? 'urgent' : ''}">${p.restCount}쉼</span>`
-                : '';
+            const restVal = (p.status === 'waiting' || p.status === 'playing') ? p.restCount : '-';
+            const restCls = (p.restCount >= CONFIG.MAX_REST && p.status === 'waiting') ? 'urgent' : '';
             return `
-            <div class="pc lv-bg-${p.level} ${p.selected?'selected':''} ${p.status} gender-${genderCls} ${p.shuttle?'shuttle-done':''}" onclick="toggleSelect('${p.id}')">
-                <div class="pc-main">
-                    <span class="pc-name">${p.name}</span>
-                    ${restTag}
-                    <button class="pc-shuttle ${p.shuttle?'done':''}" onclick="toggleShuttle('${p.id}',event)" title="셔틀콕 제출">${p.shuttle?'🏸':'○'}</button>
-                    <span class="pc-game-badge${p.gameCount > 0 ? ' has-games' : ''}">${p.gameCount}</span>
-                </div>
-                <div class="pc-tags">
-                    <span class="pc-lv lv-${p.level}">${p.level}</span>
-                    <span class="pc-gender ${genderCls}">${p.gender}</span>
-                    ${restTag}
-                    <button class="pc-status ${p.status}" onclick="event.stopPropagation();showStatusDropdown('${p.id}',event)">${statusLabel}</button>
-                </div>
-                ${p.status!=='playing'?`<button class="pc-del" onclick="event.stopPropagation();removePlayer('${p.id}')">×</button>`:''}
+            <div class="pr ${p.selected?'selected':''} ${p.status} gender-${genderCls}" onclick="toggleSelect('${p.id}')">
+                <span class="pr-name">${p.name}</span>
+                <span class="pr-lv lv-${p.level}">${p.level}</span>
+                <span class="pr-gender ${genderCls}">${p.gender}</span>
+                <input type="checkbox" class="pr-shuttle" ${p.shuttle?'checked':''} onclick="event.stopPropagation();toggleShuttle('${p.id}',event)" title="셔틀콕 제출">
+                <span class="pr-games${p.gameCount > 0 ? ' has-games' : ''}">${p.gameCount}</span>
+                <span class="pr-rest ${restCls}">${restVal}쉼</span>
+                <select class="pr-status-select" onclick="event.stopPropagation()" onchange="changeStatusDirect('${p.id}',this.value)">
+                    <option value="waiting" ${p.status==='waiting'?'selected':''}>대기</option>
+                    <option value="playing" ${p.status==='playing'?'selected':''} disabled>게임중</option>
+                    <option value="resting" ${p.status==='resting'?'selected':''}>휴식</option>
+                    <option value="late" ${p.status==='late'?'selected':''}>늦참</option>
+                </select>
+                ${p.status!=='playing'?`<button class="pr-del" onclick="event.stopPropagation();removePlayer('${p.id}')">×</button>`:''}
             </div>`;
         }).join('');
     }
@@ -1305,6 +1338,14 @@ async function exportAttendanceToSheet() {
     } finally {
         _exportingAttendance = false;
     }
+}
+
+// ============ PLAYER PANEL TOGGLE ============
+function togglePlayerPanel() {
+    const panel = $('#sectionRight');
+    const btn = $('#btnTogglePlayers');
+    panel.classList.toggle('collapsed');
+    btn.textContent = panel.classList.contains('collapsed') ? '☰' : '✕';
 }
 
 // ============ EVENTS ============

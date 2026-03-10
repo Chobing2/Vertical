@@ -28,40 +28,19 @@
 <!-- MAIN -->
 <main class="app-main">
 
-    <!-- TOP: 코트 현황 -->
-    <section class="section-courts">
-        <div class="section-bar">
-            <h2>🏟️ 코트 현황</h2>
-            <button class="btn btn-ghost-sm" id="btnAddCourt">+ 코트 추가</button>
-        </div>
-        <div class="courts-row" id="courtsRow"></div>
-    </section>
+    <!-- LEFT COLUMN: 코트 + 매칭 -->
+    <section class="section-left">
 
-    <!-- BOTTOM -->
-    <section class="section-bottom">
-
-        <!-- LEFT: 대기 인원 -->
-        <div class="panel panel-players">
-            <div class="panel-head">
-                <h3>👥 대기 인원 <span class="badge" id="waitingCount">0</span></h3>
-                <input type="text" class="search-input" id="searchPlayer" placeholder="🔍 이름 검색">
+        <!-- 코트 현황 -->
+        <div class="section-courts">
+            <div class="section-bar">
+                <h2>🏟️ 코트 현황</h2>
+                <button class="btn btn-ghost-sm" id="btnAddCourt">+ 코트 추가</button>
             </div>
-            <div class="filter-row">
-                <button class="chip active" data-filter="all">전체</button>
-                <button class="chip" data-filter="waiting">대기</button>
-                <button class="chip" data-filter="playing">게임중</button>
-                <button class="chip" data-filter="resting">휴식</button>
-                <button class="chip" data-filter="late">늦참</button>
-            </div>
-            <div class="player-scroll">
-                <div class="player-list" id="playerList"></div>
-            </div>
-            <div class="panel-foot">
-                <button class="btn btn-outline-full" id="btnAddManual">+ 직접 추가</button>
-            </div>
+            <div class="courts-row" id="courtsRow"></div>
         </div>
 
-        <!-- RIGHT: 매칭 -->
+        <!-- 매칭 -->
         <div class="panel panel-match">
             <div class="panel-head">
                 <h3>⚡ 게임 매칭</h3>
@@ -89,7 +68,35 @@
                 </div>
             </div>
         </div>
+
     </section>
+
+    <!-- TOGGLE BUTTON -->
+    <button class="panel-toggle" id="btnTogglePlayers" onclick="togglePlayerPanel()" title="대기인원 열기/닫기">☰</button>
+
+    <!-- RIGHT COLUMN: 대기 인원 -->
+    <section class="section-right" id="sectionRight">
+        <div class="panel panel-players">
+            <div class="panel-head">
+                <h3>👥 대기 인원 <span class="badge" id="waitingCount">0</span></h3>
+                <input type="text" class="search-input" id="searchPlayer" placeholder="🔍 이름 검색">
+            </div>
+            <div class="filter-row">
+                <button class="chip active" data-filter="all">전체</button>
+                <button class="chip" data-filter="waiting">대기</button>
+                <button class="chip" data-filter="playing">게임중</button>
+                <button class="chip" data-filter="resting">휴식</button>
+                <button class="chip" data-filter="late">늦참</button>
+            </div>
+            <div class="player-scroll">
+                <div class="player-list" id="playerList"></div>
+            </div>
+            <div class="panel-foot">
+                <button class="btn btn-outline-full" id="btnAddManual">+ 직접 추가</button>
+            </div>
+        </div>
+    </section>
+
 </main>
 
 <!-- MODAL: 시트 불러오기 -->
