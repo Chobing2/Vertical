@@ -62,6 +62,24 @@ body { font-family:'Noto Sans KR','Outfit',system-ui,sans-serif; background:var(
 .logo h1 span { color:var(--green); font-weight:800; }
 .date-display { font-size:.8rem; color:var(--txt2); font-weight:500; }
 
+/* 출석 저장(내보내기) 여부 배지 N/Y */
+.att-status {
+    display:inline-flex; align-items:center; gap:7px;
+    padding:4px 5px 4px 12px; border-radius:999px;
+    font-size:.74rem; font-weight:700; border:1px solid;
+    transition:all .2s; user-select:none;
+}
+.att-status .att-status-label { line-height:1; }
+.att-status .att-status-val {
+    display:inline-flex; align-items:center; justify-content:center;
+    width:20px; height:20px; border-radius:50%;
+    font-size:.74rem; font-weight:800; color:#fff; line-height:1;
+}
+.att-status.no { background:var(--red-bg); color:var(--red); border-color:rgba(220,38,38,.32); }
+.att-status.no .att-status-val { background:var(--red); }
+.att-status.yes { background:var(--green-bg2); color:var(--green-d); border-color:var(--green-border); }
+.att-status.yes .att-status-val { background:var(--green); }
+
 /* ========== BUTTONS ========== */
 .btn {
     display:inline-flex; align-items:center; gap:5px;
@@ -93,7 +111,7 @@ body { font-family:'Noto Sans KR','Outfit',system-ui,sans-serif; background:var(
 .section-left { flex:2; display:flex; flex-direction:column; gap:16px; min-height:0; min-width:0; overflow-y:auto; overflow-x:hidden; }
 
 /* RIGHT: 대기인원 — 1/3 */
-.section-right { flex:1; display:flex; flex-direction:column; min-height:0; min-width:0; max-width:340px; transition:all .3s ease; overflow:hidden; }
+.section-right { flex:1.25; display:flex; flex-direction:column; min-height:0; min-width:0; max-width:400px; transition:all .3s ease; overflow:hidden; }
 .section-right.collapsed { flex:0; max-width:0; padding:0; opacity:0; pointer-events:none; }
 
 /* 햄버거 토글 버튼 */
@@ -266,22 +284,22 @@ body { font-family:'Noto Sans KR','Outfit',system-ui,sans-serif; background:var(
 .pr-header {
     display:flex; align-items:center; gap:6px;
     padding:5px 10px; background:var(--bg3); border-bottom:2px solid var(--brd2);
-    font-size:.6rem; font-weight:700; color:var(--txt3); text-transform:uppercase; letter-spacing:.03em;
+    font-size:.67rem; font-weight:700; color:var(--txt3); text-transform:uppercase; letter-spacing:.03em;
     position:sticky; top:0; z-index:2;
 }
 .pr-header span { flex-shrink:0; }
 .pr-header .h-name { flex:1; min-width:44px; }
-.pr-header .h-lv { width:22px; text-align:center; }
-.pr-header .h-gender { width:16px; text-align:center; }
-.pr-header .h-shuttle { width:16px; text-align:center; }
-.pr-header .h-games { width:22px; text-align:center; }
-.pr-header .h-rest { width:28px; text-align:center; }
-.pr-header .h-status { width:52px; text-align:center; }
+.pr-header .h-lv { width:24px; text-align:center; }
+.pr-header .h-gender { width:18px; text-align:center; }
+.pr-header .h-shuttle { width:18px; text-align:center; }
+.pr-header .h-games { width:24px; text-align:center; }
+.pr-header .h-rest { width:32px; text-align:center; }
+.pr-header .h-status { width:58px; text-align:center; }
 
 /* --- Player Row (pr) --- */
 .pr {
     display:flex; align-items:center; gap:6px;
-    padding:6px 10px; cursor:pointer; transition:all .12s;
+    padding:7px 10px; cursor:pointer; transition:all .12s;
     border-bottom:1px solid var(--brd);
     position:relative;
 }
@@ -290,15 +308,17 @@ body { font-family:'Noto Sans KR','Outfit',system-ui,sans-serif; background:var(
 .pr.playing { opacity:.45; cursor:default; background:var(--blue-bg); }
 .pr.resting { opacity:.5; background:var(--amber-bg); }
 .pr.late { opacity:.4; background:var(--bg3); }
+/* 대기게임(대기열)에 편성된 인원: 선택 불가, 게임중과 동일한 느낌 */
+.pr.queued { opacity:.5; cursor:default; background:var(--purple-bg); }
 
 /* 성별 왼쪽 라인 */
 .pr.gender-male { border-left:3px solid var(--blue); }
 .pr.gender-female { border-left:3px solid var(--pink); }
 
-.pr-name { font-size:.8rem; font-weight:700; color:var(--txt); min-width:44px; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pr-name { font-size:.88rem; font-weight:700; color:var(--txt); min-width:44px; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
 .pr-lv {
-    font-size:.6rem; font-weight:800; padding:1px 5px; border-radius:3px; color:#fff; flex-shrink:0;
+    font-size:.68rem; font-weight:800; padding:1px 5px; border-radius:3px; color:#fff; flex-shrink:0;
 }
 .pr-lv.lv-A { background:#dc2626; }
 .pr-lv.lv-B { background:#ea580c; }
@@ -306,7 +326,7 @@ body { font-family:'Noto Sans KR','Outfit',system-ui,sans-serif; background:var(
 .pr-lv.lv-D { background:#2563eb; }
 .pr-lv.lv-E { background:#7c3aed; }
 
-.pr-gender { font-size:.65rem; font-weight:700; flex-shrink:0; }
+.pr-gender { font-size:.72rem; font-weight:700; flex-shrink:0; }
 .pr-gender.male { color:var(--blue); }
 .pr-gender.female { color:var(--pink); }
 
@@ -318,26 +338,26 @@ body { font-family:'Noto Sans KR','Outfit',system-ui,sans-serif; background:var(
 
 /* 게임수 */
 .pr-games {
-    min-width:22px; height:20px;
+    min-width:24px; height:22px;
     display:flex; align-items:center; justify-content:center;
-    border-radius:4px; font-size:.7rem; font-weight:800;
+    border-radius:4px; font-size:.78rem; font-weight:800;
     background:var(--bg3); color:var(--txt3); flex-shrink:0;
 }
 .pr-games.has-games { background:var(--green); color:#fff; }
 
 /* 쉼 표시 */
 .pr-rest {
-    font-size:.58rem; font-weight:600; color:var(--txt3);
+    font-size:.65rem; font-weight:600; color:var(--txt3);
     background:#f0f0f0; padding:0px 4px; border-radius:6px; flex-shrink:0;
 }
 .pr-rest.urgent { color:#fff; background:var(--red); }
 
 /* 상태 드롭다운 (select) */
 .pr-status-select {
-    font-size:.65rem; font-weight:600; padding:2px 3px;
+    font-size:.72rem; font-weight:600; padding:2px 3px;
     border:1px solid var(--brd); border-radius:4px;
     background:#fff; color:var(--txt); cursor:pointer;
-    font-family:inherit; flex-shrink:0; outline:none; max-width:52px;
+    font-family:inherit; flex-shrink:0; outline:none; max-width:60px;
 }
 .pr-status-select:focus { border-color:var(--green); }
 

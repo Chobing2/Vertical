@@ -108,6 +108,16 @@ function updateDate() {
 
 function closeModal(id) { $(`#${id}`).classList.remove('show'); }
 
+// 출석 내보내기(구글시트 저장) 여부 표시 N/Y
+function setAttExportStatus(done) {
+    const el = $('#attExportStatus');
+    if (!el) return;
+    el.classList.toggle('yes', !!done);
+    el.classList.toggle('no', !done);
+    const val = el.querySelector('.att-status-val');
+    if (val) val.textContent = done ? 'Y' : 'N';
+}
+
 // 매칭 기록용 키 생성 (4명 id 정렬)
 function matchKey(ids) { return [...ids].sort().join(','); }
 
@@ -185,8 +195,11 @@ async function loadFromSheet() {
         return;
     }
     const members = data.slice(1).map(r => ({ name:(r[0]||'').trim(), gender:(r[1]||'').trim(), level:(r[2]||'C').trim().toUpperCase() })).filter(m => m.name && m.gender);
-    // 가나다순 정렬
-    members.sort((a,b) => a.name.localeCompare(b.name, 'ko'));
+    // 여자 먼저(가나다) → 남자(가나다)
+    members.sort((a,b) => {
+        if (a.gender !== b.gender) return a.gender === '여' ? -1 : 1;
+        return a.name.localeCompare(b.name, 'ko');
+    });
     S.sheetMembers = members;
     const existing = new Set(S.players.map(p => p.name));
     el.innerHTML = members.map((m,i) => `
@@ -237,6 +250,7 @@ async function confirmSave() {
         try {
             await fetch(CONFIG.APPS_SCRIPT_URL, { method:'POST', mode:'no-cors', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'saveAttendance',date:ds,players:played.map(p=>({name:p.name,level:p.level,gender:p.gender,gameCount:p.gameCount}))}) });
             toast('출석 저장 완료!', 'ok');
+            setAttExportStatus(true);
         } catch { toast('저장 실패', 'err'); }
     }
     closeModal('modalSave');
@@ -388,6 +402,11 @@ function toggleShuttle(pid, evt) {
 function toggleSelect(pid) {
     const p = S.players.find(x => x.id === pid);
     if (!p || p.status === 'playing' || p.status === 'late') return;
+    // 대기게임(대기열)에 이미 편성된 인원은 게임중인 인원과 동일하게 선택 불가
+    if (S.queue.some(g => g.teamA.includes(pid) || g.teamB.includes(pid))) {
+        toast('이미 대기게임에 편성된 인원입니다', 'info');
+        return;
+    }
     if (p.status === 'resting') p.status = 'waiting';
     p.selected = !p.selected;
     if (p.selected) S.selectedIds.push(pid);
@@ -983,14 +1002,19 @@ function renderPlayers() {
     const search = ($('#searchPlayer')?.value||'').toLowerCase();
     const filter = $('.chip.active')?.dataset.filter || 'all';
 
+    // 대기열에 편성된 인원 id (게임중과 동일하게 선택 불가 처리)
+    const queuedIds = new Set();
+    S.queue.forEach(g => { g.teamA.forEach(id => queuedIds.add(id)); g.teamB.forEach(id => queuedIds.add(id)); });
+
     let arr = S.players.filter(p => {
         if (search && !p.name.toLowerCase().includes(search)) return false;
         if (filter !== 'all' && p.status !== filter) return false;
         return true;
     });
 
-    // 가나다순 정렬 (이름 우선), 같은 이름 내에서 급수순
+    // 여자 먼저(가나다) → 남자(가나다)
     arr.sort((a,b) => {
+        if (a.gender !== b.gender) return a.gender === '여' ? -1 : 1;
         return a.name.localeCompare(b.name, 'ko');
     });
 
@@ -1008,10 +1032,11 @@ function renderPlayers() {
         </div>`;
         list.innerHTML = header + arr.map(p => {
             const genderCls = p.gender === '남' ? 'male' : 'female';
+            const isQueued = queuedIds.has(p.id) && p.status === 'waiting';
             const restVal = (p.status === 'waiting' || p.status === 'playing') ? p.restCount : '-';
             const restCls = (p.restCount >= CONFIG.MAX_REST && p.status === 'waiting') ? 'urgent' : '';
             return `
-            <div class="pr ${p.selected?'selected':''} ${p.status} gender-${genderCls}" onclick="toggleSelect('${p.id}')">
+            <div class="pr ${p.selected?'selected':''} ${p.status} ${isQueued?'queued':''} gender-${genderCls}" onclick="toggleSelect('${p.id}')">
                 <span class="pr-name">${p.name}</span>
                 <span class="pr-lv lv-${p.level}">${p.level}</span>
                 <span class="pr-gender ${genderCls}">${p.gender}</span>
@@ -1261,6 +1286,7 @@ async function exportAttendanceToSheet() {
         };
         await fetch(CONFIG.APPS_SCRIPT_URL, { method:'POST', mode:'no-cors', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
         _attendanceExported = true;
+        setAttExportStatus(true);
         toast(`✅ 출석 ${played.length}명 시트 내보내기 완료!`, 'ok');
     } catch(e) {
         toast('❌ 출석 내보내기 실패: ' + e.message, 'err');
@@ -1368,6 +1394,7 @@ function initEvents() {
 // ============ INIT ============
 document.addEventListener('DOMContentLoaded', () => {
     updateDate();
+    setAttExportStatus(false);
     initCourts();
     initEvents();
     renderAll();
