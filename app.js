@@ -39,6 +39,7 @@ const S = {
     courts: [],
     queue: [],
     matchType: 'auto',
+    matchRule: 'balance',  // 매칭 규칙: balance(기존) | same(같은 급수) | similar(±1단계)
     selectedIds: [],
     sheetMembers: [],
     matchHistory: [],   // 과거 매칭 조합 기록 (Set of sorted id strings)
@@ -390,6 +391,28 @@ function removePlayer(pid) {
     renderAll();
 }
 
+// ---- 선수 삭제 확인 (실수로 X 눌러 정보 날리는 사고 방지) ----
+let _pendingDelId = null;
+function confirmRemovePlayer(pid) {
+    const p = S.players.find(x => x.id === pid);
+    if (!p) return;
+    if (p.status === 'playing') { toast('게임중 삭제 불가', 'err'); return; }
+    _pendingDelId = pid;
+    $('#delPlayerName').textContent = p.name;
+    $('#delPlayerInfo').textContent = `${p.level}급 · ${p.gender} · ${p.gameCount}게임 · ${p.restCount}쉼`;
+    $('#modalDelPlayer').classList.add('show');
+}
+function doRemovePlayer() {
+    const pid = _pendingDelId;
+    _pendingDelId = null;
+    closeModal('modalDelPlayer');
+    if (pid) {
+        const p = S.players.find(x => x.id === pid);
+        removePlayer(pid);
+        if (p) toast(`${p.name} 삭제됨`, 'info');
+    }
+}
+
 function toggleShuttle(pid, evt) {
     evt.stopPropagation();
     const p = S.players.find(x => x.id === pid);
@@ -707,10 +730,23 @@ function scoreCombo(four) {
     // (1) 모든 후보가 순수 대기자이므로 playing 패널티 불필요
     const playingPenalty = 0;
 
-    // (2) 급수 차이: 차이가 작을수록 좋음
+    // (2) 급수 차이: 차이가 작을수록 좋음 (매칭 규칙에 따라 가중치 분기)
     const lvls = four.map(p => CONFIG.LV[p.level] || 3);
     const lvSpread = Math.max(...lvls) - Math.min(...lvls);
-    const tierScore = lvSpread * 12; // 급수 차이 1당 12점
+    let tierScore;
+    const rule = S.matchRule || 'balance';
+    if (rule === 'same') {
+        // 같은 급수 우선: 급수 차이에 매우 큰 가중치 (동일 급수끼리 강하게 유도)
+        // 단, 하드 필터가 아니라 점수라서 인원이 부족하면 자연스럽게 완화됨
+        tierScore = lvSpread * 120;
+    } else if (rule === 'similar') {
+        // 비슷한 급수: 최대 1단계 차이까지는 허용, 그 이상은 강한 패널티
+        tierScore = lvSpread * 60;
+        if (lvSpread > 1) tierScore += (lvSpread - 1) * 800;
+    } else {
+        // 밸런스(기존): 급수 차이 1당 12점
+        tierScore = lvSpread * 12;
+    }
 
     // (3) 혼복 동적 패널티: 최근 비율에 따라 자동 조절
     const mCount = four.filter(p => p.gender === '남').length;
@@ -956,7 +992,7 @@ function addToQueue(teamA, teamB, type) {
 function removeFromQueue(gid) { S.queue = S.queue.filter(g => g.id !== gid); renderAll(); }
 
 // ============ RENDERING ============
-function renderAll() { renderCourts(); renderPlayers(); renderQueue(); renderPreview(); if (courtsCollapsed) renderCourtsSummary(); }
+function renderAll() { renderCourts(); renderPlayers(); renderQueue(); renderPreview(); if (courtsCollapsed) renderCourtsSummary(); saveState(); }
 
 function renderCourts() {
     const el = $('#courtsRow');
@@ -1049,7 +1085,7 @@ function renderPlayers() {
                     <option value="resting" ${p.status==='resting'?'selected':''}>휴식</option>
                     <option value="late" ${p.status==='late'?'selected':''}>늦참</option>
                 </select>
-                ${p.status!=='playing'?`<button class="pr-del" onclick="event.stopPropagation();removePlayer('${p.id}')">×</button>`:''}
+                ${p.status!=='playing'?`<button class="pr-del" onclick="event.stopPropagation();confirmRemovePlayer('${p.id}')">×</button>`:''}
             </div>`;
         }).join('');
     }
@@ -1245,6 +1281,7 @@ async function exportGamesToSheet() {
         await fetch(CONFIG.APPS_SCRIPT_URL, { method:'POST', mode:'no-cors', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
         // 내보낸 게임번호 기록
         newGames.forEach(g => _exportedGameNums.add(g.gameNum));
+        saveState();
         toast(`✅ 게임 기록 ${newGames.length}건 시트 내보내기 완료!`, 'ok');
     } catch(e) {
         toast('❌ 게임 기록 내보내기 실패: ' + e.message, 'err');
@@ -1287,6 +1324,7 @@ async function exportAttendanceToSheet() {
         await fetch(CONFIG.APPS_SCRIPT_URL, { method:'POST', mode:'no-cors', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
         _attendanceExported = true;
         setAttExportStatus(true);
+        saveState();
         toast(`✅ 출석 ${played.length}명 시트 내보내기 완료!`, 'ok');
     } catch(e) {
         toast('❌ 출석 내보내기 실패: ' + e.message, 'err');
@@ -1338,6 +1376,133 @@ function togglePlayerPanel() {
     btn.textContent = panel.classList.contains('collapsed') ? '☰' : '✕';
 }
 
+// ============ 매칭 규칙 선택 (추가 기능) ============
+const RULE_LABELS = { balance:'밸런스', same:'같은 급수', similar:'비슷한 급수' };
+const RULE_NOTES = {
+    balance: '급수 차이 최소 · 남복/여복 우선 · 여자A는 남B~D와 3:1 허용 · 게임수 균등 · {N}게임 쉬면 강제배정',
+    same: '같은 급수끼리 우선 매칭(비슷한 실력 집중) · 남복/여복 우선 · 게임수 균등 · {N}게임 쉬면 강제배정',
+    similar: '최대 1단계 차이까지 비슷한 급수끼리 매칭 · 남복/여복 우선 · 게임수 균등 · {N}게임 쉬면 강제배정',
+};
+
+function updateRulesNote() {
+    const note = $('#rulesNote');
+    if (!note) return;
+    const txt = (RULE_NOTES[S.matchRule] || RULE_NOTES.balance).replace('{N}', CONFIG.MAX_REST);
+    note.innerHTML = `<strong>매칭 규칙:</strong> ${txt}`;
+}
+
+function setMatchRule(rule) {
+    if (!RULE_LABELS[rule]) return;
+    S.matchRule = rule;
+    $$('.rule-tab').forEach(b => b.classList.toggle('active', b.dataset.rule === rule));
+    updateRulesNote();
+    renderPreview();
+    saveState();
+    toast(`매칭 규칙: ${RULE_LABELS[rule]}`, 'info');
+}
+
+function setRestThreshold(val) {
+    const n = parseInt(val, 10);
+    if (isNaN(n)) return;
+    CONFIG.MAX_REST = n;
+    const el = $('#restThresholdVal');
+    if (el) el.textContent = n + '게임';
+    updateRulesNote();
+    renderPlayers(); // 쉼 강조(urgent) 표시 갱신
+    saveState();
+}
+
+/** 저장된 규칙/임계값을 UI에 반영 */
+function applyRuleUI() {
+    $$('.rule-tab').forEach(b => b.classList.toggle('active', b.dataset.rule === (S.matchRule || 'balance')));
+    const slider = $('#restThreshold');
+    if (slider) {
+        slider.value = CONFIG.MAX_REST;
+        const el = $('#restThresholdVal');
+        if (el) el.textContent = CONFIG.MAX_REST + '게임';
+    }
+    updateRulesNote();
+}
+
+// ============ 자동 저장 / 복원 (추가 기능: localStorage) ============
+const STORAGE_KEY = 'vertical_badminton_state_v1';
+
+function todayStr() {
+    const d = new Date();
+    return `${d.getFullYear()}-${(d.getMonth()+1).toString().padStart(2,'0')}-${d.getDate().toString().padStart(2,'0')}`;
+}
+
+function saveState() {
+    try {
+        const data = {
+            savedDate: todayStr(),
+            players: S.players,
+            courts: S.courts,        // court.game.startTime(절대 ms) 포함 → 복원 시 경과시간 재계산
+            queue: S.queue,
+            matchHistory: S.matchHistory,
+            gameTypeHistory: S.gameTypeHistory,
+            matchCounter: S.matchCounter,
+            gameLog: S.gameLog,
+            matchRule: S.matchRule,
+            _cid: S._cid, _pid: S._pid, _gid: S._gid,
+            maxRest: CONFIG.MAX_REST,
+            attExported: _attendanceExported,
+            exportedGameNums: [..._exportedGameNums],
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    } catch (e) { /* 저장 실패(용량 등)는 조용히 무시 — 기존 동작에 영향 없음 */ }
+}
+
+function loadState() {
+    try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return false;
+        const data = JSON.parse(raw);
+        // 다른 날짜 데이터면 새로 시작 (이전 데이터 폐기 → 출석 오염 방지)
+        if (data.savedDate !== todayStr()) {
+            localStorage.removeItem(STORAGE_KEY);
+            return false;
+        }
+        if (!Array.isArray(data.players)) return false;
+        S.players = data.players;
+        S.courts = Array.isArray(data.courts) ? data.courts : [];
+        S.queue = Array.isArray(data.queue) ? data.queue : [];
+        S.matchHistory = Array.isArray(data.matchHistory) ? data.matchHistory : [];
+        S.gameTypeHistory = Array.isArray(data.gameTypeHistory) ? data.gameTypeHistory : [];
+        S.matchCounter = data.matchCounter || 0;
+        S.gameLog = Array.isArray(data.gameLog) ? data.gameLog : [];
+        S.matchRule = RULE_LABELS[data.matchRule] ? data.matchRule : 'balance';
+        S._cid = data._cid || 0; S._pid = data._pid || 0; S._gid = data._gid || 0;
+        if (typeof data.maxRest === 'number') CONFIG.MAX_REST = data.maxRest;
+        _attendanceExported = !!data.attExported;
+        _exportedGameNums = new Set(Array.isArray(data.exportedGameNums) ? data.exportedGameNums : []);
+        return S.courts.length > 0 || S.players.length > 0;
+    } catch (e) { return false; }
+}
+
+/** 복원 후 진행중 게임의 타이머를 다시 가동 */
+function restoreTimers() {
+    S.courts.forEach(c => {
+        if (c.game && c.game.startTime) {
+            c.game.elapsed = Math.floor((Date.now() - c.game.startTime) / 1000);
+            S.timers[c.id] = setInterval(() => {
+                if (c.game) {
+                    c.game.elapsed = Math.floor((Date.now() - c.game.startTime) / 1000);
+                    const el = document.querySelector(`[data-timer="${c.id}"]`);
+                    if (el) el.textContent = fmtTime(c.game.elapsed);
+                }
+            }, 1000);
+        }
+    });
+}
+
+function showResetModal() { $('#modalReset').classList.add('show'); }
+function doResetData() {
+    try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
+    closeModal('modalReset');
+    location.reload();
+}
+
 // ============ EVENTS ============
 function initEvents() {
     $('#btnLoadSheet').onclick = loadFromSheet;
@@ -1354,6 +1519,16 @@ function initEvents() {
     $('#inpName').onkeydown = e => { if (e.key==='Enter') addManual(); };
     $('#btnConfirmSave').onclick = confirmSave;
     $('#btnAutoMatch').onclick = autoMatch;
+
+    // 매칭 규칙 선택 + 강제배정 임계값 (추가 기능)
+    $$('.rule-tab').forEach(btn => btn.onclick = () => setMatchRule(btn.dataset.rule));
+    const restSlider = $('#restThreshold');
+    if (restSlider) restSlider.oninput = e => setRestThreshold(e.target.value);
+
+    // 선수 삭제 확인 / 데이터 초기화 (추가 기능)
+    $('#btnConfirmDelPlayer').onclick = doRemovePlayer;
+    $('#btnResetData').onclick = showResetModal;
+    $('#btnConfirmReset').onclick = doResetData;
 
     $$('.type-tab').forEach(btn => btn.onclick = () => {
         $$('.type-tab').forEach(b => b.classList.remove('active'));
@@ -1394,8 +1569,18 @@ function initEvents() {
 // ============ INIT ============
 document.addEventListener('DOMContentLoaded', () => {
     updateDate();
-    setAttExportStatus(false);
-    initCourts();
     initEvents();
-    renderAll();
+    const restored = loadState();
+    if (restored) {
+        restoreTimers();
+        setAttExportStatus(_attendanceExported);
+        applyRuleUI();
+        renderAll();
+        toast('이전 데이터를 복원했습니다', 'ok');
+    } else {
+        setAttExportStatus(false);
+        initCourts();
+        applyRuleUI();
+        renderAll();
+    }
 });
