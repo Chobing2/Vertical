@@ -706,3 +706,43 @@ body { font-family:'Noto Sans KR','Outfit',system-ui,sans-serif; background:var(
     .match-bar { padding:6px 10px; }
     .panel-foot { padding:8px 10px; }
 }
+
+/* ============================================
+   추가 기능 스타일 (매칭 규칙 선택 / 삭제·초기화 모달)
+   ============================================ */
+
+/* 매칭 규칙 선택 바 */
+.rule-selector {
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:8px 14px; background:var(--bg2); border-bottom:1px solid var(--brd); flex-wrap:wrap;
+}
+.rule-tabs { display:flex; gap:4px; }
+.rule-tab {
+    padding:5px 11px; font-size:.72rem; font-weight:600; cursor:pointer;
+    background:#fff; color:var(--txt2); border:1px solid var(--brd2); border-radius:var(--r);
+    transition:all .12s;
+}
+.rule-tab:hover { color:var(--purple); border-color:var(--purple); }
+.rule-tab.active { background:var(--purple); border-color:var(--purple); color:#fff; }
+.rule-rest-ctrl { display:flex; align-items:center; gap:7px; font-size:.7rem; color:var(--txt2); font-weight:600; }
+.rule-rest-ctrl input[type=range] { width:96px; accent-color:var(--purple); cursor:pointer; }
+.rule-rest-ctrl #restThresholdVal { font-weight:800; color:var(--purple); min-width:42px; text-align:right; }
+
+/* 초기화 버튼 (헤더) */
+.btn-reset { padding:7px 12px; font-size:.78rem; background:#fff; color:var(--txt3); border:1px solid var(--brd2); }
+.btn-reset:hover { color:var(--red); border-color:var(--red); background:var(--red-bg); }
+
+/* 위험 작업 확인 모달 (삭제 / 초기화) */
+.del-warn { background:var(--red-bg); border:1px solid rgba(220,38,38,.22); border-radius:var(--r-lg); padding:14px; text-align:center; }
+.del-warn .del-name { font-size:1.15rem; font-weight:800; color:var(--txt); }
+.del-warn .del-info { font-size:.78rem; color:var(--txt2); margin-top:4px; }
+.del-warn .del-msg { font-size:.8rem; color:var(--red); margin-top:8px; font-weight:600; line-height:1.5; }
+.btn-danger-sm { padding:6px 18px; font-size:.8rem; background:var(--red); color:#fff; font-weight:700; border-radius:var(--r); }
+.btn-danger-sm:hover { background:#b91c1c; }
+
+@media (max-width:768px) {
+    .rule-selector { padding:6px 10px; gap:6px; }
+    .rule-tab { padding:5px 9px; font-size:.68rem; }
+    .rule-rest-ctrl input[type=range] { width:80px; }
+    .header-right .btn-reset { font-size:.65rem; padding:4px 8px; }
+}
