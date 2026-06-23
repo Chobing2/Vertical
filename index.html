@@ -28,6 +28,7 @@
         <button class="btn btn-sheet" id="btnOpenSheet" onclick="window.open('https://docs.google.com/spreadsheets/d/13a8PaYF_DtxtqjIx9ByWOMDZAZjIMJNXWjQP21RpM-U','_blank')">📊 구글시트 이동</button>
         <button class="btn btn-history" id="btnGameLog">📋 게임 기록</button>
         <button class="btn btn-save" id="btnSaveAttendance">💾 출석 저장</button>
+        <button class="btn btn-reset" id="btnResetData" title="오늘 데이터 초기화">🗑️ 초기화</button>
     </div>
 </header>
 
@@ -67,7 +68,20 @@
                 </div>
                 <button class="btn btn-primary-sm" id="btnAutoMatch">⚡ 자동 매칭</button>
             </div>
-            <div class="rules-note">
+            <!-- 매칭 규칙 선택 (추가 기능) -->
+            <div class="rule-selector">
+                <div class="rule-tabs">
+                    <button class="rule-tab active" data-rule="balance">⚖️ 밸런스</button>
+                    <button class="rule-tab" data-rule="same">🎯 같은 급수</button>
+                    <button class="rule-tab" data-rule="similar">📊 비슷한 급수</button>
+                </div>
+                <div class="rule-rest-ctrl" title="이 게임 수 이상 쉰 사람은 다음 매칭에 강제로 포함됩니다">
+                    <label>강제배정</label>
+                    <input type="range" id="restThreshold" min="3" max="15" step="1" value="8">
+                    <span id="restThresholdVal">8게임</span>
+                </div>
+            </div>
+            <div class="rules-note" id="rulesNote">
                 <strong>매칭 규칙:</strong> 급수 차이 최소 · 남복/여복 우선 · 여자A는 남B~D와 3:1 허용 · 게임수 균등 · 8게임 쉬면 강제배정
             </div>
             <div class="preview-area" id="previewArea">
@@ -142,6 +156,44 @@
         <div class="modal-bot">
             <button class="btn btn-ghost-sm" onclick="closeModal('modalAdd')">취소</button>
             <button class="btn btn-primary-sm" id="btnConfirmAdd">추가</button>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL: 선수 삭제 확인 (추가 기능) -->
+<div class="modal-bg" id="modalDelPlayer">
+    <div class="modal modal-sm">
+        <div class="modal-top"><h3>⚠️ 선수 삭제</h3><button class="btn-x" onclick="closeModal('modalDelPlayer')">&times;</button></div>
+        <div class="modal-mid">
+            <div class="del-warn">
+                <div class="del-name" id="delPlayerName"></div>
+                <div class="del-info" id="delPlayerInfo"></div>
+                <div class="del-msg">삭제하면 이 선수의 게임수 · 출석 등<br>오늘의 모든 정보가 사라집니다.</div>
+            </div>
+            <p class="modal-desc" style="margin-top:12px;text-align:center">정말 삭제하시겠습니까?</p>
+        </div>
+        <div class="modal-bot">
+            <button class="btn btn-ghost-sm" onclick="closeModal('modalDelPlayer')">취소</button>
+            <div style="flex:1"></div>
+            <button class="btn btn-danger-sm" id="btnConfirmDelPlayer">삭제하기</button>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL: 데이터 초기화 확인 (추가 기능) -->
+<div class="modal-bg" id="modalReset">
+    <div class="modal modal-sm">
+        <div class="modal-top"><h3>⚠️ 데이터 초기화</h3><button class="btn-x" onclick="closeModal('modalReset')">&times;</button></div>
+        <div class="modal-mid">
+            <div class="del-warn">
+                <div class="del-msg">현재 화면의 모든 인원 · 게임 기록 · 코트 진행상황이<br>삭제되고 처음 상태로 돌아갑니다.</div>
+            </div>
+            <p class="modal-desc" style="margin-top:12px;text-align:center">정말 초기화하시겠습니까?<br><span style="font-size:.72rem;color:var(--txt3)">(구글시트에 저장된 데이터는 영향받지 않습니다)</span></p>
+        </div>
+        <div class="modal-bot">
+            <button class="btn btn-ghost-sm" onclick="closeModal('modalReset')">취소</button>
+            <div style="flex:1"></div>
+            <button class="btn btn-danger-sm" id="btnConfirmReset">초기화</button>
         </div>
     </div>
 </div>
