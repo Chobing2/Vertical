@@ -71,6 +71,7 @@ const CONFIG = {
     SHEET_ID: '여기에_구글시트_ID_입력',
     SHEET_TAB: '참가자',          // 참가자 명단 탭 이름
     GAME_LOG_TAB: '게임매칭',     // 게임 기록이 저장될 탭 이름
+    STATE_TAB: '상태',           // 전체 앱 상태(JSON)가 저장될 탭 이름
     APPS_SCRIPT_URL: '여기에_Apps_Script_배포_URL_입력',
     ...
 };
@@ -86,35 +87,16 @@ https://docs.google.com/spreadsheets/d/[여기가_SHEET_ID]/edit
 게임 기록 및 출석 내보내기 기능을 사용하려면 Apps Script 설정이 필요합니다.
 
 1. 구글 시트에서 **확장 프로그램 > Apps Script** 열기
-2. 아래 코드를 붙여넣고 **웹 앱으로 배포** (액세스: 모든 사용자)
+2. 이 저장소의 [`apps-script.gs`](apps-script.gs) 내용을 통째로 붙여넣고 **웹 앱으로 배포** (액세스: 모든 사용자)
 3. 발급된 URL을 `CONFIG.APPS_SCRIPT_URL`에 입력
 
-```javascript
-function doPost(e) {
-    const data = JSON.parse(e.postData.contents);
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-
-    if (data.action === 'saveGameLog') {
-        const sheet = ss.getSheetByName(data.sheetTab) || ss.insertSheet(data.sheetTab);
-        data.games.forEach(g => {
-            sheet.appendRow([data.date, g.gameNum, g.type, g.court,
-                g.teamA, g.teamA_levels, g.teamB, g.teamB_levels, g.duration, g.time]);
-        });
-    }
-
-    if (data.action === 'updateAttendance') {
-        const sheet = ss.getSheetByName('참가자');
-        // 참가자 시트에서 이름 매칭 후 참석일자/게임수 업데이트
-        data.players.forEach(p => {
-            // 구현 필요: 이름 열에서 p.name 검색 후 참석일자 기록
-        });
-    }
-
-    return ContentService.createTextOutput('ok');
-}
-```
+Apps Script 코드는 `app.js`/`index.html`과 별도로 [`apps-script.gs`](apps-script.gs) 파일로 버전 관리됩니다. 참가자 이름 자동분류(`onEdit`), 상태 동기화(`saveState`/`clearState`/`getState`), 게임기록/출석 내보내기 로직이 모두 그 파일 안에 있습니다.
 
 > Apps Script 미설정 시, 내보내기 버튼을 눌러도 브라우저 콘솔에만 기록됩니다.
+>
+> **`apps-script.gs`를 수정했다면, 구글 시트 Apps Script 편집기에 반영 후 반드시 재배포(새 버전)해야 합니다.**
+> 배포 URL이 바뀌지 않도록 "새 배포"가 아니라 기존 배포에서 "버전 관리 → 새 버전"으로 업데이트하세요.
+> 실행 권한(액세스: 모든 사용자)은 기존과 동일하게 유지합니다.
 
 ---
 
@@ -208,9 +190,10 @@ const CONFIG = {
 
 ```
 📦 프로젝트 루트
- ┣ 📄 index.html     — 전체 UI 마크업 (모달, 헤더, 코트/매칭/대기 패널)
- ┣ 📄 styles.css     — 디자인 및 레이아웃 (다크 테마, 반응형)
- ┗ 📄 app.js         — 전체 비즈니스 로직 (매칭 엔진, 시트 연동, 상태 관리)
+ ┣ 📄 index.html      — 전체 UI 마크업 (모달, 헤더, 코트/매칭/대기 패널)
+ ┣ 📄 styles.css      — 디자인 및 레이아웃 (다크 테마, 반응형)
+ ┣ 📄 app.js          — 전체 비즈니스 로직 (매칭 엔진, 시트 연동, 상태 관리)
+ ┗ 📄 apps-script.gs  — 구글 Apps Script 서버 코드 (참가자 자동분류, 상태/게임기록/출석 동기화)
 ```
 
 ---

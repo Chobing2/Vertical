@@ -14,7 +14,8 @@ const CONFIG = {
     SHEET_ID: '13a8PaYF_DtxtqjIx9ByWOMDZAZjIMJNXWjQP21RpM-U',
     SHEET_TAB: '참가자',
     GAME_LOG_TAB: '게임매칭',
-    APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbwpV9oleWJ8uLDD7u86k60sl6FyFeOQv0HwlygbhqUp7F6OSNsk9E58b79C10Of-q3Z/exec',
+    STATE_TAB: '상태',
+    APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbwkn8rg-pFcnaNz4_KFe_GgmxMeDuklGh6ln-bDpPjZk0vViCrabfTRNC8q9v4hAPs/exec',
     DEFAULT_COURTS: 3,
     LV: { A:5, B:4, C:3, D:2, E:1 },
     // 여자A 3:1 예외: 여자A 2명 미만일 때 남자 B~D와 3:1 허용
@@ -419,7 +420,7 @@ function toggleShuttle(pid, evt) {
     if (!p) return;
     p.shuttle = !p.shuttle;
     renderPlayers();
-    toast(`${p.name} 셔틀콕 ${p.shuttle ? '제출 ✅' : '미제출'}`, 'info');
+    toast(`${p.name} 셔틀콕 ${p.shuttle ? '제출' : '미제출'}`, 'info');
 }
 
 function toggleSelect(pid) {
@@ -1026,11 +1027,19 @@ function renderCourts() {
             </div>
             <div class="court-foot">
                 ${live
-                    ?`<button class="btn btn-cancel" onclick="cancelGame('${c.id}')">❌ 취소</button><button class="btn btn-end" onclick="endGame('${c.id}')">🏁 종료</button>`
-                    :`<button class="btn btn-start" onclick="startGame('${c.id}')" ${!S.queue.length?'disabled':''}>▶ 게임 시작</button>`}
+                    ?`<button class="btn btn-cancel" onclick="cancelGame('${c.id}')">취소</button><button class="btn btn-end" onclick="endGame('${c.id}')">종료</button>`
+                    :`<button class="btn btn-start" onclick="startGame('${c.id}')" ${!S.queue.length?'disabled':''}>게임 시작</button>`}
             </div>
         </div>`;
     }).join('');
+}
+
+function getLastGameType(name) {
+    for (let i = S.gameLog.length - 1; i >= 0; i--) {
+        const g = S.gameLog[i];
+        if ([...g.teamA, ...g.teamB].some(p => p.name === name)) return g.type;
+    }
+    return null;
 }
 
 function renderPlayers() {
@@ -1055,7 +1064,7 @@ function renderPlayers() {
     });
 
     if (!arr.length) {
-        list.innerHTML = `<div style="text-align:center;padding:24px;color:var(--txt3);font-size:.82rem">${S.players.length ? '조건에 맞는 인원 없음' : '📥 시트에서 회원을 불러오세요'}</div>`;
+        list.innerHTML = `<div style="text-align:center;padding:24px;color:var(--txt3);font-size:.82rem">${S.players.length ? '조건에 맞는 인원 없음' : '시트에서 회원을 불러오세요'}</div>`;
     } else {
         const header = `<div class="pr-header">
             <span class="h-name">이름</span>
@@ -1071,9 +1080,14 @@ function renderPlayers() {
             const isQueued = queuedIds.has(p.id) && p.status === 'waiting';
             const restVal = (p.status === 'waiting' || p.status === 'playing') ? p.restCount : '-';
             const restCls = (p.restCount >= CONFIG.MAX_REST && p.status === 'waiting') ? 'urgent' : '';
+            const lastType = getLastGameType(p.name);
+            const lastTypeCls = { '남복':'male', '여복':'female', '혼복':'mixed', '혼합':'special' }[lastType] || '';
             return `
             <div class="pr ${p.selected?'selected':''} ${p.status} ${isQueued?'queued':''} gender-${genderCls}" onclick="toggleSelect('${p.id}')">
-                <span class="pr-name">${p.name}</span>
+                <span class="pr-name-wrap">
+                    <span class="pr-name">${p.name}</span>
+                    ${lastType ? `<span class="pr-lastgame type-${lastTypeCls}">${lastType}</span>` : ''}
+                </span>
                 <span class="pr-lv lv-${p.level}">${p.level}</span>
                 <span class="pr-gender ${genderCls}">${p.gender}</span>
                 <input type="checkbox" class="pr-shuttle" ${p.shuttle?'checked':''} onclick="event.stopPropagation();toggleShuttle('${p.id}',event)" title="셔틀콕 제출">
@@ -1111,7 +1125,7 @@ function renderPreview() {
         <div class="preview-game" ${genderWarning ? 'style="border-color:var(--amber)"' : ''}>
             <span class="preview-label">다음 게임 미리보기</span>
             <span class="preview-type">${type}</span>
-            ${genderWarning ? '<div style="color:var(--amber);font-size:.7rem;font-weight:600;margin-bottom:6px">⚠️ 3:1 성비 - 수동 매칭만 가능</div>' : ''}
+            ${genderWarning ? '<div style="color:var(--amber);font-size:.7rem;font-weight:600;margin-bottom:6px">3:1 성비 - 수동 매칭만 가능</div>' : ''}
             <div class="preview-teams">
                 <div class="preview-team">
                     <div class="preview-team-label">TEAM A (${sA})</div>
@@ -1259,7 +1273,7 @@ async function exportGamesToSheet() {
     }
 
     _exportingGames = true;
-    toast('📤 게임 기록 내보내는 중...', 'info');
+    toast('게임 기록 내보내는 중...', 'info');
 
     try {
         const payload = {
@@ -1282,9 +1296,9 @@ async function exportGamesToSheet() {
         // 내보낸 게임번호 기록
         newGames.forEach(g => _exportedGameNums.add(g.gameNum));
         saveState();
-        toast(`✅ 게임 기록 ${newGames.length}건 시트 내보내기 완료!`, 'ok');
+        toast(`게임 기록 ${newGames.length}건 시트 내보내기 완료!`, 'ok');
     } catch(e) {
-        toast('❌ 게임 기록 내보내기 실패: ' + e.message, 'err');
+        toast('게임 기록 내보내기 실패: ' + e.message, 'err');
     } finally {
         _exportingGames = false;
     }
@@ -1313,7 +1327,7 @@ async function exportAttendanceToSheet() {
     }
 
     _exportingAttendance = true;
-    toast('📤 출석 내보내는 중...', 'info');
+    toast('출석 내보내는 중...', 'info');
 
     try {
         const payload = {
@@ -1325,9 +1339,9 @@ async function exportAttendanceToSheet() {
         _attendanceExported = true;
         setAttExportStatus(true);
         saveState();
-        toast(`✅ 출석 ${played.length}명 시트 내보내기 완료!`, 'ok');
+        toast(`출석 ${played.length}명 시트 내보내기 완료!`, 'ok');
     } catch(e) {
-        toast('❌ 출석 내보내기 실패: ' + e.message, 'err');
+        toast('출석 내보내기 실패: ' + e.message, 'err');
     } finally {
         _exportingAttendance = false;
     }
@@ -1340,7 +1354,7 @@ function toggleCourts() {
     $('#courtsRow').classList.toggle('hidden', courtsCollapsed);
     $('#courtsSummary').classList.toggle('hidden', !courtsCollapsed);
     $('#btnToggleCourts').classList.toggle('collapsed', courtsCollapsed);
-    $('#btnToggleCourts').textContent = courtsCollapsed ? '▶' : '▼';
+    $('#btnToggleCourts').innerHTML = '<i data-lucide="chevron-down"></i>';
     if (courtsCollapsed) renderCourtsSummary();
 }
 
@@ -1355,14 +1369,14 @@ function renderCourtsSummary() {
                 <span class="cc-name">${c.name}</span>
                 <span class="cc-type t-${c.game.type}">${c.game.type}</span>
                 <span class="cc-timer" data-timer="${c.id}">${fmtTime(c.game.elapsed)}</span>
-                <button class="cc-btn" onclick="endGame('${c.id}')" title="종료">🏁</button>
-                <button class="cc-btn" onclick="cancelGame('${c.id}')" title="취소">❌</button>
+                <button class="cc-btn" onclick="endGame('${c.id}')" title="종료"><i data-lucide="flag"></i></button>
+                <button class="cc-btn" onclick="cancelGame('${c.id}')" title="취소"><i data-lucide="x"></i></button>
             </div>`;
         } else {
             return `<div class="court-chip">
                 <span class="cc-name">${c.name}</span>
                 <span class="cc-empty">대기</span>
-                <button class="cc-btn" onclick="startGame('${c.id}')" title="시작" ${!S.queue.length?'disabled':''}>▶</button>
+                <button class="cc-btn" onclick="startGame('${c.id}')" title="시작" ${!S.queue.length?'disabled':''}><i data-lucide="play"></i></button>
             </div>`;
         }
     }).join('');
@@ -1373,7 +1387,7 @@ function togglePlayerPanel() {
     const panel = $('#sectionRight');
     const btn = $('#btnTogglePlayers');
     panel.classList.toggle('collapsed');
-    btn.textContent = panel.classList.contains('collapsed') ? '☰' : '✕';
+    btn.innerHTML = panel.classList.contains('collapsed') ? '<i data-lucide="menu"></i>' : '<i data-lucide="x"></i>';
 }
 
 // ============ 매칭 규칙 선택 (추가 기능) ============
@@ -1450,7 +1464,27 @@ function saveState() {
             exportedGameNums: [..._exportedGameNums],
         };
         localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        scheduleSyncToSheet(data);
     } catch (e) { /* 저장 실패(용량 등)는 조용히 무시 — 기존 동작에 영향 없음 */ }
+}
+
+/** localStorage/시트에서 읽은 저장 데이터를 S에 반영. 다른 날짜 데이터는 폐기(출석 오염 방지) */
+function applyStateData(data) {
+    if (!data || data.savedDate !== todayStr()) return false;
+    if (!Array.isArray(data.players)) return false;
+    S.players = data.players;
+    S.courts = Array.isArray(data.courts) ? data.courts : [];
+    S.queue = Array.isArray(data.queue) ? data.queue : [];
+    S.matchHistory = Array.isArray(data.matchHistory) ? data.matchHistory : [];
+    S.gameTypeHistory = Array.isArray(data.gameTypeHistory) ? data.gameTypeHistory : [];
+    S.matchCounter = data.matchCounter || 0;
+    S.gameLog = Array.isArray(data.gameLog) ? data.gameLog : [];
+    S.matchRule = RULE_LABELS[data.matchRule] ? data.matchRule : 'balance';
+    S._cid = data._cid || 0; S._pid = data._pid || 0; S._gid = data._gid || 0;
+    if (typeof data.maxRest === 'number') CONFIG.MAX_REST = data.maxRest;
+    _attendanceExported = !!data.attExported;
+    _exportedGameNums = new Set(Array.isArray(data.exportedGameNums) ? data.exportedGameNums : []);
+    return S.courts.length > 0 || S.players.length > 0;
 }
 
 function loadState() {
@@ -1458,26 +1492,71 @@ function loadState() {
         const raw = localStorage.getItem(STORAGE_KEY);
         if (!raw) return false;
         const data = JSON.parse(raw);
-        // 다른 날짜 데이터면 새로 시작 (이전 데이터 폐기 → 출석 오염 방지)
-        if (data.savedDate !== todayStr()) {
-            localStorage.removeItem(STORAGE_KEY);
-            return false;
-        }
-        if (!Array.isArray(data.players)) return false;
-        S.players = data.players;
-        S.courts = Array.isArray(data.courts) ? data.courts : [];
-        S.queue = Array.isArray(data.queue) ? data.queue : [];
-        S.matchHistory = Array.isArray(data.matchHistory) ? data.matchHistory : [];
-        S.gameTypeHistory = Array.isArray(data.gameTypeHistory) ? data.gameTypeHistory : [];
-        S.matchCounter = data.matchCounter || 0;
-        S.gameLog = Array.isArray(data.gameLog) ? data.gameLog : [];
-        S.matchRule = RULE_LABELS[data.matchRule] ? data.matchRule : 'balance';
-        S._cid = data._cid || 0; S._pid = data._pid || 0; S._gid = data._gid || 0;
-        if (typeof data.maxRest === 'number') CONFIG.MAX_REST = data.maxRest;
-        _attendanceExported = !!data.attExported;
-        _exportedGameNums = new Set(Array.isArray(data.exportedGameNums) ? data.exportedGameNums : []);
-        return S.courts.length > 0 || S.players.length > 0;
+        const ok = applyStateData(data);
+        // 다른 날짜 데이터면 로컬 저장분 정리
+        if (!ok && data.savedDate !== todayStr()) localStorage.removeItem(STORAGE_KEY);
+        return ok;
     } catch (e) { return false; }
+}
+
+// ---- 구글시트를 진짜 저장소로: 상태 전체를 JSON으로 동기화 ----
+let _syncTimer = null;
+// 운동 종료/초기화 진행 중에는 뒤늦게 도착하는 saveState 동기화가
+// clearState를 덮어써서 '상태' 탭이 다시 채워지는 레이스가 생길 수 있어 차단용 플래그로 막는다.
+let _sessionEnding = false;
+function scheduleSyncToSheet(data) {
+    if (!CONFIG.APPS_SCRIPT_URL || _sessionEnding) return;
+    clearTimeout(_syncTimer);
+    _syncTimer = setTimeout(() => syncStateToSheet(data), 1500);
+}
+
+async function syncStateToSheet(data) {
+    if (!CONFIG.APPS_SCRIPT_URL) return;
+    try {
+        await fetch(CONFIG.APPS_SCRIPT_URL, {
+            method: 'POST', mode: 'no-cors',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ action:'saveState', sheetTab: CONFIG.STATE_TAB, state: JSON.stringify(data) }),
+        });
+    } catch (e) { /* 오프라인이면 무시. localStorage엔 이미 저장됨 — 다음 변경 시 재동기화 */ }
+}
+
+/**
+ * 시트에 저장된 상태 JSON을 가져옴 (기기/브라우저 무관하게 복원하기 위함)
+ * Apps Script exec URL은 <script> 태그로 불러오면 실행되지 않아(다운로드 응답 처리 등) JSONP가 안 통함.
+ * 대신 참가자 명단 로딩(fetchJSONP)과 동일하게, 구글의 gviz/tq 엔드포인트로 '상태' 탭 A1 셀 값을 직접 읽는다.
+ */
+function fetchStateFromSheet() {
+    return new Promise((resolve) => {
+        if (!CONFIG.SHEET_ID) { resolve(null); return; }
+        const cb = '_state_cb_' + Date.now();
+        const to = setTimeout(() => { delete window[cb]; sc.remove(); resolve(null); }, 8000);
+        window[cb] = function(r) {
+            clearTimeout(to); delete window[cb]; sc.remove();
+            // 헤더 없는 단일 셀이라 gviz가 그 값을 컬럼 라벨로 인식하는 경우와, 데이터 행으로 인식하는 경우 둘 다 처리
+            const json = r?.table?.rows?.[0]?.c?.[0]?.v ?? r?.table?.cols?.[0]?.label;
+            if (!json) { resolve(null); return; }
+            try { resolve(JSON.parse(json)); } catch (e) { resolve(null); }
+        };
+        const url = `https://docs.google.com/spreadsheets/d/${CONFIG.SHEET_ID}/gviz/tq?tqx=responseHandler:${cb}&sheet=${encodeURIComponent(CONFIG.STATE_TAB)}`;
+        const sc = document.createElement('script');
+        sc.src = url;
+        sc.onerror = () => { clearTimeout(to); delete window[cb]; sc.remove(); resolve(null); };
+        document.head.appendChild(sc);
+    });
+}
+
+/** 시트에 저장된 상태 JSON을 삭제 (운동 종료 시 사용 — 안 지우면 새로고침 시 시트에서 되살아남) */
+async function clearStateFromSheet() {
+    if (!CONFIG.APPS_SCRIPT_URL) return;
+    clearTimeout(_syncTimer); // 예약된 재동기화가 삭제 직후 덮어쓰지 않도록 취소
+    try {
+        await fetch(CONFIG.APPS_SCRIPT_URL, {
+            method: 'POST', mode: 'no-cors',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ action:'clearState', sheetTab: CONFIG.STATE_TAB }),
+        });
+    } catch (e) { /* 오프라인이면 무시 */ }
 }
 
 /** 복원 후 진행중 게임의 타이머를 다시 가동 */
@@ -1498,9 +1577,37 @@ function restoreTimers() {
 
 function showResetModal() { $('#modalReset').classList.add('show'); }
 function doResetData() {
+    _sessionEnding = true;
     try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
-    closeModal('modalReset');
-    location.reload();
+    // 시트 상태도 같이 지워야 함 — 안 지우면 새로고침 시 시트 상태로 되살아남 (기기 무관 복원 로직 때문)
+    clearStateFromSheet().finally(() => { closeModal('modalReset'); location.reload(); });
+}
+
+/** 운동 종료: 오늘 데이터를 로컬 + 시트에서 완전히 삭제하고 처음 상태로 */
+function showEndSessionModal() {
+    const warn = $('#endSessionWarn');
+    if (warn) {
+        const notExported = !_attendanceExported;
+        warn.innerHTML = `오늘 저장된 모든 데이터(인원 · 게임 기록 · 코트 진행상황)가<br>구글시트에서도 삭제되고 처음 상태로 돌아갑니다.`
+            + (notExported ? `<br><span style="color:var(--amber);font-weight:700">아직 출석 저장을 하지 않았습니다!</span>` : '');
+    }
+    $('#modalEndSession').classList.add('show');
+}
+async function doEndSession() {
+    if (confirm('출석 저장 / 게임 기록 내보내기도 같이 진행할까요?')) {
+        await exportAttendanceToSheet();
+        await exportGamesToSheet();
+    }
+    // 위 내보내기 과정에서 걸린 saveState()가 뒤늦게(1500ms 디바운스 + GAS 지연) 도착해
+    // 방금 지운 '상태' 탭을 다시 채우는 일이 없도록, 지우기 직전에 동기화를 완전히 차단한다.
+    _sessionEnding = true;
+    clearTimeout(_syncTimer);
+    try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
+    clearStateFromSheet().finally(() => {
+        closeModal('modalEndSession');
+        toast('운동 종료. 오늘 데이터를 모두 삭제했습니다.', 'info');
+        location.reload();
+    });
 }
 
 // ============ EVENTS ============
@@ -1529,13 +1636,15 @@ function initEvents() {
     $('#btnConfirmDelPlayer').onclick = doRemovePlayer;
     $('#btnResetData').onclick = showResetModal;
     $('#btnConfirmReset').onclick = doResetData;
+    $('#btnEndSession').onclick = showEndSessionModal;
+    $('#btnConfirmEndSession').onclick = doEndSession;
 
     $$('.type-tab').forEach(btn => btn.onclick = () => {
         $$('.type-tab').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         S.matchType = btn.dataset.type;
         // 수동 모드면 버튼 텍스트 변경
-        $('#btnAutoMatch').textContent = btn.dataset.type === 'manual' ? '📝 선택 매칭' : '⚡ 자동 매칭';
+        $('#btnAutoMatch').innerHTML = btn.dataset.type === 'manual' ? '<i data-lucide="pencil"></i>선택 매칭' : '<i data-lucide="zap"></i>자동 매칭';
         if (btn.dataset.type === 'manual') {
             $('#btnAutoMatch').onclick = manualMatch;
         } else {
@@ -1567,10 +1676,16 @@ function initEvents() {
 }
 
 // ============ INIT ============
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     updateDate();
     initEvents();
-    const restored = loadState();
+
+    // 기기/브라우저에 무관하게 복원되도록 시트를 먼저 시도, 실패(오프라인 등)하면 localStorage로 폴백
+    let restored = false;
+    const sheetData = await fetchStateFromSheet();
+    if (sheetData) restored = applyStateData(sheetData);
+    if (!restored) restored = loadState();
+
     if (restored) {
         restoreTimers();
         setAttExportStatus(_attendanceExported);
